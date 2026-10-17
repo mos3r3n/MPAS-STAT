@@ -1,0 +1,65 @@
+# Model-space statistics configuration.
+#
+# The PBS driver (run_verify_model*.ksh) replaces the placeholder values
+# forecastFile / initFile / outputFile / nMember / nProcesses with sed
+# before each run. For a manual run, replace them with real paths/values.
+forecast_file: forecastFile
+init_file: initFile
+output_file: outputFile
+n_member: nMember
+
+variables:
+  - U
+  - V
+  - T
+  - Qv
+  - U10
+  - V10
+  - T2
+  - Q2
+  - Ps
+
+lat_bin_width: 2.0
+lon_bin_width: 2.0
+level_bin_size: 6
+
+pres_levels:
+  - 1000.0
+  - 925.0
+  - 850.0
+  - 700.0
+  - 500.0
+  - 400.0
+  - 300.0
+  - 250.0
+  - 200.0
+  - 150.0
+  - 100.0
+  - 50.0
+  - 20.0
+
+hgt_levels:
+  - 100.0
+  - 500.0
+  - 1000.0
+  - 1500.0
+  - 2000.0
+  - 3000.0
+  - 5000.0
+  - 7000.0
+  - 10000.0
+  - 15000.0
+  - 20000.0
+  - 25000.0
+  - 30000.0
+
+regions:
+  Global: [-90.0, 90.0]
+
+regional: true
+
+n_processes: nProcesses
+
+verbose: true
+
+overwrite: true

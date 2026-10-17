@@ -1,0 +1,15 @@
+name: mpas-stat
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.9
+  - numpy>=1.21
+  - netcdf4>=1.5
+  - h5py>=3.0
+  - matplotlib>=3.4
+  - pyyaml>=5.4
+  - scipy>=1.7
+  # Optional but recommended:
+  - numba>=0.55
+  - cartopy>=0.20
+  - pip

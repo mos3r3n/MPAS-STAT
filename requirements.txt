@@ -1,0 +1,13 @@
+# Core runtime dependencies
+numpy>=1.21
+netCDF4>=1.5
+matplotlib>=3.4
+PyYAML>=5.4
+
+# Observation-space pipeline / radar product
+h5py>=3.0
+scipy>=1.7
+
+# Optional accelerators and map projections (install manually if wanted):
+#   numba>=0.55
+#   cartopy>=0.20
