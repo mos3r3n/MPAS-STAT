@@ -1,0 +1,55 @@
+# Example: cycling DA OMB/OMA verification.
+#
+# Copy this file, replace every /path/to/... value, then run:
+#   python -m mpas_stat.cli.obs_stats my_config.yaml
+#   python -m mpas_stat.cli.obs_graphics my_config.yaml
+#
+# Both stages read the SAME config, so the cycle list and sensor list can
+# never diverge between statistics and figures.
+
+paths:
+  da_dir: /path/to/regional_mpasjedi
+  hofx_dir: /path/to/regional_mpasjedi
+  diag_dir: null                 # null -> <graphic_dir>/diag_files
+  graphic_dir: /path/to/verify_obs
+
+experiments:
+  names:
+    - exp_control
+    - exp_test
+  labels:
+    - Control
+    - Test
+  types: [da, da]                # "da" -> OMB+OMA, "hofx" -> OMB only
+  outerloop: [2, 2]              # analysis outer loop whose OMA is read
+  n_member: [1, 1]               # >1 -> ensemble spread, OMA in *_ana.h5
+
+sensors:
+  - sondes
+  - aircraft
+  - satwind
+  - sfc
+  - amsua_n18
+  - mhs_n19
+
+domains:
+  global: [null, null, null, null]   # [lat_min, lat_max, lon_min, lon_max]
+  NXTro: [30.0, 90.0, -180.0, 180.0]
+
+plot_settings:
+  plot_oma: true
+  apply_domains: [global, NXTro]
+  figure_format: png
+  max_time_ticks: 12
+  generate_lat_lon_2d: true
+  latlon_domain: global
+  latlon_lat_bin_width: 10.0
+  latlon_lon_bin_width: 10.0
+  comparison_relative_reduction_statistics: [RMS, STD]
+  generate_time_level_2d: true
+  generate_lat_vert_2d: true
+
+time_settings:
+  start_time: "2024-09-13 06:00:00"
+  end_time: "2024-09-21 12:00:00"
+  interval: 6

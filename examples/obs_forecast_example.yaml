@@ -1,0 +1,56 @@
+# Example: extended-forecast OMF (obs-minus-forecast) skill verification.
+#
+# Copy this file, replace every /path/to/... value, then run:
+#   python -m mpas_stat.cli.obs_stats my_forecast_config.yaml
+#   python -m mpas_stat.cli.obs_graphics my_forecast_config.yaml
+#
+# Expects HofX files at:
+#   <hofx_dir>/<exp>/HofX/<init_cycle>/f<HHH>/dbOut/obsout_hofx_<obs>.h5
+
+paths:
+  da_dir: /path/to/regional_mpasjedi
+  hofx_dir: /path/to/regional_mpasjedi
+  diag_dir: null
+  graphic_dir: /path/to/verify_obs_fcst
+
+experiments:
+  names:
+    - exp_control
+  labels:
+    - Control
+  types: [hofx_forecast]
+  outerloop: [0]
+  n_member: [1]
+
+sensors:
+  - sondes
+  - aircraft
+  - satwind
+  - sfc
+  - amsua_n18
+
+domains:
+  global: [null, null, null, null]
+  NXTro: [30.0, 90.0, -180.0, 180.0]
+
+plot_settings:
+  apply_domains: [global, NXTro]
+  figure_format: png
+  max_time_ticks: 12
+  generate_lat_lon_2d: true
+  latlon_domain: global
+  latlon_lat_bin_width: 10.0
+  latlon_lon_bin_width: 10.0
+  comparison_relative_reduction_statistics: [RMS, STD]
+  generate_time_level_2d: true
+  generate_lat_vert_2d: true
+
+time_settings:
+  start_time: "2024-09-13 06:00:00"   # initialization-cycle range
+  end_time: "2024-09-21 12:00:00"
+  interval: 6
+
+forecast:
+  length: 24       # maximum lead hour
+  interval: 6      # lead spacing
+  start: 6         # first lead; set 0 to include the analysis time

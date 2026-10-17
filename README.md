@@ -9,22 +9,21 @@ engine:
 |---|---|---|
 | Verifies | MPAS forecast vs. its initial/analysis field, on the model grid | IODA obs-space OMB/OMA/OMF, at observation locations |
 | Input | MPAS `forecast` / `init` netCDF files | IODA `obsout_da_*.h5` / `obsout_hofx_*.h5` |
-| Statistics entry point | `mpas_stats_diag_model.py` | `diag_ioda_obsout_stats.py` |
-| Graphics entry point | `mpas_stats_graphic.py` | `plot_ioda_obsout_stats.py` |
-| PBS driver | `run_verify_model.ksh`, `run_verify_model_fcst.ksh` | `run_verify_obs.ksh`, `run_verify_obs_fcst.ksh` |
+| Statistics | `mpas_stat.cli.model_stats` | `mpas_stat.cli.obs_stats` |
+| Graphics | `mpas_stat.cli.model_graphics` | `mpas_stat.cli.obs_graphics` |
+| PBS driver | `scripts/run_verify_model*.ksh` | `scripts/run_verify_obs*.ksh` |
 | Diagnosis file | `mpasstat.<date>.nc` | `obsstat_<obs>.<date>.nc` |
 | Extended-forecast skill | ✓ | ✓ |
 
-Both pipelines follow a two-stage design: a Python statistics stage writes
-one netCDF diagnosis file per experiment/cycle (plus one per forecast lead
-for extended forecasts), and a graphics stage reads those files back to draw
+Both pipelines follow a two-stage design: a statistics stage writes one
+netCDF diagnosis file per experiment/cycle (plus one per forecast lead for
+extended forecasts), and a graphics stage reads those files back to draw
 publication-style figures.
 
 An optional radar composite-reflectivity product lives in
-`radar_verify_common.py`, `diag_radar_reflectivity.py`, and
-`plot_radar_reflectivity.py`. It uses METplus/`grid_stat` for neighborhood
-scores and is documented in the user guide; the original all-Python
-standalone script is kept under `legacy/` for reference.
+`src/mpas_stat/radar/`. It uses METplus/`grid_stat` for neighborhood scores
+and is documented in the user guide; the original all-Python standalone
+script is kept under `legacy/` for reference.
 
 ## Requirements
 
@@ -47,56 +46,70 @@ conda activate mpas-stat
 # Option B: pip/venv
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+pip install -e .
 ```
 
-The runtime modules are intentionally kept flat at the repository root so
-the PBS scripts can symlink `*.py` into a per-cycle working directory. The
-historical `mpas_stats_` module prefix is retained for compatibility.
+The package uses a `src/` layout. After installation, the commands
+`mpas-stat-model`, `mpas-stat-graphics`, `mpas-stat-obs`,
+`mpas-stat-obs-plot`, `mpas-stat-radar`, and `mpas-stat-radar-plot` are
+available. You can also run any stage without installing:
+
+```bash
+PYTHONPATH=src python -m mpas_stat.cli.model_stats --help
+```
 
 ## Quick start
 
 ### 1. Model-space verification
 
-Edit `input.yaml` (paths, variables, bin sizes, levels) and `graphic.yaml`
-(experiments, time range, plot types), then:
+Copy and edit the model configuration:
+
+```bash
+cp configs/model_input.yaml my_input.yaml
+cp configs/model_graphic.yaml my_graphic.yaml
+```
+
+`my_input.yaml` contains placeholders (`forecastFile`, `initFile`,
+`outputFile`, `nMember`, `nProcesses`) that the PBS driver fills in with
+`sed`; replace them manually for a one-off run.
 
 ```bash
 # Statistics for one experiment x cycle
-python mpas_stats_diag_model.py -c input.yaml
+python -m mpas_stat.cli.model_stats -c my_input.yaml
 
 # Figures for the configured experiment/cycle range
-python mpas_stats_graphic.py -c graphic.yaml
+python -m mpas_stat.cli.model_graphics -c my_graphic.yaml
 ```
 
-`run_verify_model.ksh` loops the statistics stage over a cycle range and
-fills in `input.yaml`'s `forecastFile` / `initFile` / `outputFile`
-placeholders before each call. `run_verify_model_fcst.ksh` does the same for
-extended forecasts, writing to `f<HHH>/` subdirectories.
+`scripts/run_verify_model.ksh` loops the statistics stage over a cycle range
+and fills in the placeholders before each call.
+`scripts/run_verify_model_fcst.ksh` does the same for extended forecasts,
+writing to `f<HHH>/` subdirectories.
 
 ### 2. Observation-space verification (OMB/OMA)
 
 The observation-space stages read one shared YAML config:
 
 ```bash
-python diag_ioda_obsout_stats.py examples/obs_verify_example.yaml
-python plot_ioda_obsout_stats.py examples/obs_verify_example.yaml
+python -m mpas_stat.cli.obs_stats examples/obs_verify_example.yaml
+python -m mpas_stat.cli.obs_graphics examples/obs_verify_example.yaml
 ```
 
-`run_verify_obs.ksh` generates that config from its exported settings and
-runs both stages once for the whole configured cycle range.
+`scripts/run_verify_obs.ksh` generates that config from its exported
+settings and runs both stages once for the whole configured cycle range.
 
 ### 3. Observation-space forecast skill (OMF)
 
-Use an experiment with `type: hofx_forecast` and a `forecast:` block; see
-`examples/obs_forecast_example.yaml`. Then run the same two Python stages
-(or `run_verify_obs_fcst.ksh`).
+Use an experiment with `types: [hofx_forecast]` and a `forecast:` block; see
+`examples/obs_forecast_example.yaml`. Then run the same two stages (or
+`scripts/run_verify_obs_fcst.ksh`).
 
 ### 4. Radar composite reflectivity (optional)
 
 ```bash
-python diag_radar_reflectivity.py my_radar_config.yaml
-python plot_radar_reflectivity.py my_radar_config.yaml
+python -m mpas_stat.cli.radar_stats my_radar_config.yaml
+python -m mpas_stat.cli.radar_graphics my_radar_config.yaml
 ```
 
 This product is opt-in: it is a no-op unless the config contains a top-level
@@ -106,15 +119,17 @@ experimental until validated on your system. See the user guide, §2.6.
 ### PBS jobs
 
 ```bash
-qsub run_verify_model.ksh        # cycling model-space stats
-qsub run_verify_model_fcst.ksh   # extended-forecast model-space stats
-qsub run_verify_obs.ksh          # OMB/OMA stats + figures
-qsub run_verify_obs_fcst.ksh     # OMF stats + figures
+qsub scripts/run_verify_model.ksh        # cycling model-space stats
+qsub scripts/run_verify_model_fcst.ksh   # extended-forecast model-space stats
+qsub scripts/run_verify_obs.ksh          # OMB/OMA stats + figures
+qsub scripts/run_verify_obs_fcst.ksh     # OMF stats + figures
 ```
 
 Edit the `export ...` lines at the top of each script for your experiments,
 directories, sensors, and cycle range, and replace the
-`#PBS -P your_project_id` directive with your own PBS allocation ID.
+`#PBS -P your_project_id` directive with your own PBS allocation ID. The
+scripts set `PYTHONPATH` to the repository's `src/` directory, so no install
+step is required on the compute node.
 
 ## Repository layout
 
@@ -122,18 +137,21 @@ directories, sensors, and cycle range, and replace the
 MPAS-STAT/
 ├── README.md
 ├── LICENSE
+├── pyproject.toml, MANIFEST.in
 ├── requirements.txt / environment.yml
-├── input.yaml, graphic.yaml          # model-space configuration
-├── mpas_stats_diag_*.py              # model-space statistics stage
-├── mpas_stats_graphic_*.py           # shared graphics engine
-├── obs_sensor_config.py              # obs-type metadata registry
-├── obsstat_common.py                 # obs-space config/path conventions
-├── diag_ioda_obsout_stats.py         # obs-space statistics stage
-├── plot_ioda_obsout_stats.py         # obs-space graphics stage
-├── radar_*.py                        # optional radar product
-├── run_verify_*.ksh                  # PBS drivers
+├── configs/
+│   ├── model_input.yaml              # model-space statistics config
+│   └── model_graphic.yaml            # model-space graphics config
+├── scripts/
+│   └── run_verify_*.ksh              # PBS drivers
+├── src/mpas_stat/
+│   ├── model/                        # model-space stats, interp, kernels
+│   ├── graphics/                     # shared plotting engine
+│   ├── obs/                          # IODA obs-space stats + figures
+│   ├── radar/                        # optional radar product
+│   └── cli/                          # command-line entry points
 ├── docs/USER_GUIDE.md                # full documentation
-├── examples/                         # annotated configs
+├── examples/                         # annotated obs-space configs
 ├── tests/test_smoke.py               # unit tests
 └── legacy/radar_reflectivity_verify.py
 ```
@@ -158,9 +176,11 @@ limitations — is in [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
 python -m unittest discover -s tests -v
 ```
 
-The smoke tests cover bin-center/edge consistency, domain masking with
-missing QC, the percent-reduction sign convention, pressure-level binning,
-and the Python 3.9 import path. They need `numpy`, `netCDF4`, `h5py`, and
+The tests insert `src/` on `sys.path`, so they run from the repository root
+without installing. They cover bin-center/edge consistency, domain masking
+with missing QC, the percent-reduction sign convention, pressure-level
+binning, config merging, HDF5 file resolution, `ObsType` layouts, and the
+Python 3.9 import path. They need `numpy`, `netCDF4`, `h5py`, and
 `matplotlib`; they do not require input data or METplus.
 
 ## Status and known limitations

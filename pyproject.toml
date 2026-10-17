@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mpas-stat"
+version = "0.1.0"
+description = "Verification toolkit for regional MPAS-JEDI forecasts and analyses"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [{ name = "MPAS-STAT contributors" }]
+keywords = ["MPAS", "JEDI", "verification", "meteorology", "data assimilation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+]
+dependencies = [
+    "numpy>=1.21",
+    "netCDF4>=1.5",
+    "matplotlib>=3.4",
+    "PyYAML>=5.4",
+    "h5py>=3.0",
+    "scipy>=1.7",
+]
+
+[project.optional-dependencies]
+accelerate = ["numba>=0.55"]
+maps = ["cartopy>=0.20"]
+dev = ["pyflakes>=3.0"]
+
+[project.scripts]
+mpas-stat-model = "mpas_stat.cli.model_stats:main"
+mpas-stat-graphics = "mpas_stat.cli.model_graphics:main"
+mpas-stat-obs = "mpas_stat.cli.obs_stats:main"
+mpas-stat-obs-plot = "mpas_stat.cli.obs_graphics:main"
+mpas-stat-radar = "mpas_stat.cli.radar_stats:main"
+mpas-stat-radar-plot = "mpas_stat.cli.radar_graphics:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["mpas_stat*"]

@@ -1,0 +1,144 @@
+# Model-space graphics configuration.
+# Used by: python -m mpas_stat.cli.model_graphics -c configs/model_graphic.yaml
+paths:
+  base_dir: /path/to/regional_mpasjedi
+  out_dir: /path/to/verify_model
+
+figure_format: "pdf"
+
+# Render figures in parallel across this many worker processes (each job is
+# one figure's collect+plot step -- see run_graphics() in
+# src/mpas_stat/graphics/driver.py). 1 = sequential (default, unchanged
+# behaviour). With many forecast_* plot types enabled (one figure per lead
+# hour/section/profile) this can be set close to the number of CPUs
+# available to the job, e.g. matching ncpus in run_verify_model_fcst.ksh.
+n_workers: 1
+
+experiments:
+  names:
+    - exp_control
+    - exp_test
+  labels:
+    - Control
+    - Test
+  colors:
+    - black
+    - blue
+  linestyles:
+    - "-"
+    - "--"
+
+time:
+  start: 2024091700
+  end: 2024092700
+  interval_hours: 6
+
+variables:
+  - U
+  - V
+  - T
+  - Qv
+
+statistics:
+  - rms
+  - mean
+  - std
+  - spread
+
+region: Global
+
+# Percent-difference colour bars (lat_lon_2d, lat_vert_2d, time_level_2d,
+# forecast_lat_lon_2d, forecast_lat_vert_2d, forecast_time_level_2d) now
+# auto-scale to +/- the largest |% difference| actually present in each
+# panel, instead of a fixed +/-40%. To pin a fixed range again (e.g. for
+# comparing figures across runs), set both of:
+# relative_reduction_vmin: -40
+# relative_reduction_vmax: 40
+
+plot_types:
+  - time_series_0d
+  - profiles_1d
+  - time_level_2d
+  - lat_vert_2d
+  - profile_diff_1d
+  - lat_lon_2d
+  - lat_lon_slice_2d
+  - forecast_lead_0d
+  # Extended-forecast counterparts of the plot types above. Each reads
+  # ExtendedFC statistics files (see the "forecast:" block below) instead of
+  # the background/cycling files. "forecast_profiles_1d",
+  # "forecast_profile_diff_1d", "forecast_lat_vert_2d" and
+  # "forecast_lat_lon_2d" produce one figure PER forecast lead hour, saved
+  # in the SAME folder as their background-mode counterpart with "_f<HHH>"
+  # appended to the filename, e.g.
+  # profiles_1d/profile_lat_bin_profile_rms_f006.pdf next to
+  # profiles_1d/profile_lat_bin_profile_rms.pdf. "forecast_time_level_2d" is
+  # a single figure per profile/statistic whose x-axis is forecast lead time
+  # (instead of assimilation cycle), with bootstrap significance vs. the
+  # reference/control experiment (exp_names[0]) since each lead-time column
+  # already averages over every initialization cycle. Uncomment to enable:
+  # - forecast_profiles_1d
+  # - forecast_profile_diff_1d
+  # - forecast_time_level_2d
+  # - forecast_lat_vert_2d
+  # - forecast_lat_lon_2d
+  # - forecast_scorecard
+  # "forecast_lead_diff_0d" is forecast_lead_0d's percent-difference
+  # counterpart: same x-axis (forecast lead time), but y-axis is % RMS (or
+  # other relative_reduction_statistics) reduction vs. experiments.names[0],
+  # exactly like profile_diff_1d relates to profiles_1d. Uncomment to enable:
+  # - forecast_lead_diff_0d
+
+# Extended-forecast verification settings (used by forecast_lead_0d and every
+# forecast_* plot type below).
+# Reads statistics files written by run_verify_model_fcst.ksh in
+# verify_mode=forecast, i.e.
+#   <base_dir>/<exp>/VerifyModel/<init_cycle>/f<HHH>/mpasstat.<valid_date>.nc
+# "start" defaults to "interval"; set it to 0 to also include the
+# initialization/analysis time itself.
+forecast:
+  length: 24     # forecast_length in run_verify_model_fcst.ksh
+  interval: 6    # forecast_interval in run_verify_model_fcst.ksh
+  # start: 6
+
+# Extended-forecast scorecard (used by forecast_scorecard). One row per
+# variable/level; the last row here (Ps) has no "levels", so it is read as
+# a surface/0-D field instead of a pressure-level profile. Percent
+# difference is always relative to experiments.names[0] (the first
+# experiment above is the reference/control); every other experiment gets
+# its own scorecard panel. NOTE: 925 hPa is the more common level next to
+# 850 hPa in most level sets (see pres_levels in input.yaml) -- 725 hPa
+# below is kept as given; edit the "levels" lists freely per variable.
+scorecard:
+  profile_key: vert_pres_profile
+  rows:
+    - {variable: U,  levels: [200, 500, 700, 850, 725]}
+    - {variable: V,  levels: [200, 500, 700, 850, 725]}
+    - {variable: T,  levels: [200, 500, 700, 850, 725]}
+    - {variable: Qv, levels: [200, 500, 700, 850, 725]}
+    - {variable: Ps}
+  # Triangle styling: up = improvement, down = degradation; solid + black
+  # outline = statistically significant (bootstrap CI vs. the reference
+  # excludes zero), faint/no outline = not significant. Marker size scales
+  # with |% difference|, capped at max_score.
+  # improve_color: "#3A9A40"
+  # degrade_color: "#E06666"
+  # max_score: 20
+  # min_marker_size: 6
+  # significant_min_marker_size: 45
+  # max_marker_size: 260
+  # row_height: 0.24   # vertical space per row (inches); lower = tighter y-axis spacing
+  # height_pad: 1.6    # fixed vertical space for title/colour margins/x tick labels
+
+level_slices:
+  - name: level_slices
+    vertical_type: level
+    levels: [10, 20, 30]
+
+  - name: height_slices
+    vertical_type: height
+    levels: [500, 1500, 3000]
+
+  - name: pressure_slices
+    vertical_type: pressure
+    levels: [925, 850, 700, 500]
