@@ -270,6 +270,49 @@ class TestObsSampleAndQC(unittest.TestCase):
         np.testing.assert_allclose(vec["innov"], [1.0, -2.0, 0.5])
 
 
+class TestObsCollectorsPooled(unittest.TestCase):
+    """Pooled and mean aggregation give arrays of the same shape for every
+    obs-space collector (the lat-vert product transposes its samples)."""
+
+    def test_lat_vert_and_lat_lon_shapes(self):
+        from datetime import datetime
+        from mpas_stat.obs.collect import collect_obs_lat_lon_2d, collect_obs_lat_vert_2d
+        from mpas_stat.obs.common import load_config
+        from mpas_stat.obs.process import process_experiment
+        from mpas_stat.obs.writer import write_obs_diag_files
+
+        with tempfile.TemporaryDirectory() as tmp:
+            n = 400
+            cycles = [datetime(2024, 9, 13, 6), datetime(2024, 9, 13, 12)]
+            for c in cycles:
+                db = os.path.join(tmp, "exp", "CyclingDA", c.strftime("%Y%m%d%H"), "dbOut")
+                os.makedirs(db)
+                lat, lon, pres = RNG.uniform(-60, 60, n), RNG.uniform(0, 360, n), RNG.uniform(2e4, 1e5, n)
+                _write_ioda(os.path.join(db, "obsout_da_aircraft.h5"), lat, lon, pres,
+                            {"ombg": RNG.standard_normal(n), "oman": RNG.standard_normal(n)},
+                            {"EffectiveQC0": np.zeros(n, "i4"), "EffectiveQC2": np.zeros(n, "i4")})
+            cfg_path = os.path.join(tmp, "cfg.yaml")
+            Path(cfg_path).write_text(
+                f"paths: {{da_dir: {tmp}, hofx_dir: {tmp}, diag_dir: {tmp}/diag, graphic_dir: {tmp}/fig}}\n"
+                "experiments: {names: [exp], types: [da], outerloop: [2], n_member: [1]}\n"
+                "sensors: [aircraft]\n"
+                "domains: {global: [null, null, null, null]}\n"
+                "plot_settings: {apply_domains: [global], latlon_lat_bin_width: 30, latlon_lon_bin_width: 60}\n"
+                "time_settings: {start_time: '2024-09-13 06:00:00', end_time: '2024-09-13 12:00:00', interval: 6}\n"
+            )
+            config = load_config(cfg_path)
+            write_obs_diag_files(process_experiment(config, "aircraft"), config, "aircraft", f"{tmp}/diag")
+            boot = {"n_boot": 20, "ci": 95, "seed": 0}
+            args = (f"{tmp}/diag", "exp", "omb", "aircraft", cycles, ["T"], ["airTemperature"])
+            for mode in ("mean", "pooled"):
+                lv = collect_obs_lat_vert_2d(*args, "Pressure (hPa)", True, boot, time_aggregation=mode)
+                ll = collect_obs_lat_lon_2d(*args, time_aggregation=mode)
+                for out in (lv["RMS"]["T"], ll["RMS"]["T"]):
+                    self.assertEqual(out["data"].shape, out["samples"].shape[1:])
+                    if mode == "pooled":
+                        self.assertEqual(out["pool"]["w"].shape, out["samples"].shape)
+
+
 class TestDatelineDomains(unittest.TestCase):
     def test_mask_crosses_dateline(self):
         lon = np.array([175.0, -175.0, 0.0, -170.0])

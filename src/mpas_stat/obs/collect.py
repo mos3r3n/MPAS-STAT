@@ -321,7 +321,7 @@ def collect_obs_lat_vert_2d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
             # transposes internally before pcolormesh(x=lat, y=vert, ...).
             # Swap axes here, once, at read time.
             samples = np.stack(sections, axis=0).transpose(0, 2, 1)
-            pool = (_obs_pool(per_stat_per_var, stat_disp, var, transpose=None)
+            pool = (_obs_pool(per_stat_per_var, stat_disp, var, transpose=(0, 2, 1))
                     if time_aggregation == "pooled" else None)
             mean_data, ci_low, ci_high = aggregate(samples, pool, boot)
             if not np.any(np.isfinite(mean_data)):
