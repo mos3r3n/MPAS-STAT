@@ -47,3 +47,8 @@ mpas-stat-radar-plot = "mpas_stat.cli.radar_graphics:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["mpas_stat*"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["mpas_stat"]

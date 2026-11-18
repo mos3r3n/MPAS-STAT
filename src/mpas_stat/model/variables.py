@@ -82,24 +82,29 @@ def _build_mpas_var_map():
 
 
 # --------------------- Public Functions ---------------------
+def _read_variable(mpas, mpas_vars, variable_name):
+    """Read one derived (see _build_mpas_var_map) or raw MPAS variable from
+    an open Dataset. Raw variables with a Time dimension return time 0."""
+    if variable_name in mpas_vars:
+        data = mpas_vars[variable_name]['func'](mpas)
+        units = mpas_vars[variable_name]['units']
+    elif variable_name in mpas.variables:
+        var = mpas[variable_name]
+        data = var[0, ...] if 'Time' in var.dimensions else var[:]
+        units = getattr(var, 'units', 'unknown')
+    else:
+        raise ValueError(f"Unsupported or unknown MPAS variable: {variable_name}")
+    return MPASVariable(data, variable_name=variable_name, units=units)
+
+
 def extract_mpas_variables(mpas_file, variable_name):
     """
     Extract one variable from an MPAS file.
     Returns data as MPASVariable.
     """
     with Dataset(mpas_file, 'r') as mpas:
-        mpas_vars = _build_mpas_var_map()
-        if variable_name in mpas_vars:
-            data = mpas_vars[variable_name]['func'](mpas)
-            units = mpas_vars[variable_name]['units']
-        elif variable_name in mpas.variables:
-            var = mpas[variable_name]
-            data = var[0, ...] if 'Time' in var.dimensions else var[:]
-            units = getattr(var, 'units', 'unknown')
-        else:
-            raise ValueError(f"Unsupported or unknown MPAS variable: {variable_name}")
-    
-    return MPASVariable(data, variable_name=variable_name, units=units)
+        return _read_variable(mpas, _build_mpas_var_map(), variable_name)
+
 
 def extract_mpas_variables_list(mpas_file, variable_names):
     """
@@ -117,26 +122,6 @@ def extract_mpas_variables_list(mpas_file, variable_names):
     dict[str, MPASVariable]
         Dictionary keyed by canonical variable name
     """
-    outputs = {}
-
     with Dataset(mpas_file, 'r') as mpas:
         mpas_vars = _build_mpas_var_map()
-
-        for variable_name in variable_names:
-            if variable_name in mpas_vars:
-                data = mpas_vars[variable_name]['func'](mpas)
-                units = mpas_vars[variable_name]['units']
-            elif variable_name in mpas.variables:
-                var = mpas[variable_name]
-                data = var[0, ...] if 'Time' in var.dimensions else var[:]
-                units = getattr(var, 'units', 'unknown')
-            else:
-                raise ValueError(f"Unsupported or unknown MPAS variable: {variable_name}")
-
-            outputs[variable_name] = MPASVariable(
-                data,
-                variable_name=variable_name,
-                units=units
-            )
-
-    return outputs
+        return {name: _read_variable(mpas, mpas_vars, name) for name in variable_names}

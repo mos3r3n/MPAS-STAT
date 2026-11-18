@@ -145,14 +145,28 @@ MPAS-STAT/
 ├── scripts/
 │   └── run_verify_*.ksh              # PBS drivers
 ├── src/mpas_stat/
+│   ├── core/                         # shared by every pipeline
+│   │   ├── timeutils.py              #   cycle/date/forecast-lead helpers
+│   │   ├── bootstrap.py              #   NaN-safe means, bootstrap CIs
+│   │   ├── grouping.py               #   grouped (binned) mean/rms/std
+│   │   └── jobs.py                   #   figure-job runner (serial or process pool)
 │   ├── model/                        # model-space stats, interp, kernels
 │   ├── graphics/                     # shared plotting engine
+│   │   ├── style.py, axes.py, panels.py   # style, axis and 2-D panel helpers
+│   │   ├── plots_0d/1d/2d.py, scorecard.py # plot_* functions
+│   │   ├── ncread.py, collect.py, collect_forecast.py  # read mpasstat files
+│   │   ├── driver.py                 # plot_types -> figure jobs
+│   │   └── functions.py, io.py       # backwards-compatible facades
 │   ├── obs/                          # IODA obs-space stats + figures
+│   │   ├── reader.py, binning.py, bounds.py, process.py, writer.py  # statistics stage
+│   │   ├── collect.py, experiments.py, figures.py                   # graphics stage
+│   │   ├── diag.py, plot.py          # stage entry points (facades)
+│   │   └── common.py, sensor_config.py
 │   ├── radar/                        # optional radar product
 │   └── cli/                          # command-line entry points
 ├── docs/USER_GUIDE.md                # full documentation
 ├── examples/                         # annotated obs-space configs
-├── tests/test_smoke.py               # unit tests
+├── tests/                            # unit tests (test_smoke.py, test_structure.py)
 └── legacy/radar_reflectivity_verify.py
 ```
 
@@ -180,7 +194,9 @@ The tests insert `src/` on `sys.path`, so they run from the repository root
 without installing. They cover bin-center/edge consistency, domain masking
 with missing QC, the percent-reduction sign convention, pressure-level
 binning, config merging, HDF5 file resolution, `ObsType` layouts, and the
-Python 3.9 import path. They need `numpy`, `netCDF4`, `h5py`, and
+Python 3.9 import path, plus (test_structure.py) the backwards-compatible
+import paths, the shared `core` helpers, the unified IODA reader, and an
+obs-space statistics -> diagnosis file -> collector round trip. They need `numpy`, `netCDF4`, `h5py`, and
 `matplotlib`; they do not require input data or METplus.
 
 ## Status and known limitations

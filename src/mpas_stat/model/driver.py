@@ -134,10 +134,12 @@ def _initialize_accumulator(arr: np.ndarray) -> Dict[str, np.ndarray]:
 
 
 def _update_accumulator(accum: Dict[str, np.ndarray], arr: np.ndarray):
+    """Add one member's finite values to the running sum/sum-of-squares/count."""
     valid = np.isfinite(arr)
-    accum["sum"][valid] += arr[valid]
-    accum["sumsq"][valid] += arr[valid] * arr[valid]
-    accum["count"][valid] += 1
+    # np.add(..., where=...) avoids creating large temporary masked arrays.
+    np.add(accum["sum"], arr, out=accum["sum"], where=valid)
+    np.add(accum["sumsq"], arr * arr, out=accum["sumsq"], where=valid)
+    accum["count"] += valid.astype(np.int32, copy=False)
 
 
 def _finalize_accumulator(accum: Dict[str, np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
@@ -277,23 +279,15 @@ def prepare_all_variable_fields_ensemble(
 
         if not accumulators:
             for var_name in vars_needed:
-                arr0 = np.asarray(member_data[var_name], dtype=np.float64)
-                accumulators[var_name] = {
-                    "sum": np.zeros_like(arr0, dtype=np.float64),
-                    "sumsq": np.zeros_like(arr0, dtype=np.float64),
-                    "count": np.zeros_like(arr0, dtype=np.int32),
-                }
+                accumulators[var_name] = _initialize_accumulator(
+                    np.asarray(member_data[var_name], dtype=np.float64)
+                )
 
         for var_name in vars_needed:
-            arr = np.asarray(member_data[var_name], dtype=np.float64)
-            accum = accumulators[var_name]
-
-            valid = np.isfinite(arr)
-            # These three in-place updates are the main ensemble-mean/spread work.
-            # np.add(..., where=...) avoids creating large temporary masked arrays.
-            np.add(accum["sum"], arr, out=accum["sum"], where=valid)
-            np.add(accum["sumsq"], arr * arr, out=accum["sumsq"], where=valid)
-            accum["count"] += valid.astype(np.int32, copy=False)
+            _update_accumulator(
+                accumulators[var_name],
+                np.asarray(member_data[var_name], dtype=np.float64),
+            )
 
     if n_io_workers == 1:
         for imem in range(1, config.n_member + 1):
@@ -509,6 +503,40 @@ def calculate_statistics(config: MPASConfig):
     logger.info(f"Throughput: {max(total_time, 1e-12) / len(config.variables):.2f} seconds/variable")
 
 
+# netCDF dimensions for each statistic product, keyed by dimension group.
+# 1D keys are matched exactly ("lat_bin_profile") or by prefix (per-region
+# vertical profiles such as "vert_pres_profile_Global"); 2D/3D keys exactly.
+_PRODUCT_DIMS = {
+    "1D": [
+        ("lat_bin_profile", ('nLatBins',)),
+        ("vert_profile_", ('nVertLevels',)),
+        ("vert_bin_profile_", ('nLevelBins',)),
+        ("vert_hgt_profile_", ('nHeightLevels',)),
+        ("vert_pres_profile_", ('nPressureLevels',)),
+    ],
+    "2D": [
+        ("lat_lon", ('nLatBins', 'nLonBins')),
+        ("lat_lev", ('nLatBins', 'nLevelBins')),
+        ("lat_hgt", ('nLatBins', 'nHeightLevels')),
+        ("lat_pres", ('nLatBins', 'nPressureLevels')),
+    ],
+    "3D": [
+        ("lat_lon_lev", ('nLatBins', 'nLonBins', 'nLevelBins')),
+        ("lat_lon_hgt", ('nLatBins', 'nLonBins', 'nHeightLevels')),
+        ("lat_lon_pres", ('nLatBins', 'nLonBins', 'nPressureLevels')),
+    ],
+}
+
+
+def _result_dim_map(dim_type: str, key: str) -> Dict[int, Tuple[str, ...]]:
+    """{ndim: dimension names} for one 1D/2D/3D statistic product."""
+    for name, dims in _PRODUCT_DIMS[dim_type]:
+        matches = key.startswith(name) if name.endswith("_") else key == name
+        if matches:
+            return {len(dims): dims}
+    raise ValueError(f"Unknown {dim_type} result key: {key}")
+
+
 def write_stat_group(
     group,
     stat_dict: Dict[str, np.ndarray],
@@ -589,56 +617,10 @@ def write_stats_results(results, config: MPASConfig, logger: logging.Logger):
                         region_grp = dim_grp.createGroup(region_name)
                         write_stat_group(region_grp, stat_dict, {})
 
-                elif dim_type == "1D":
+                elif dim_type in ("1D", "2D", "3D"):
                     for key, stat_dict in dim_data.items():
                         grp = dim_grp.createGroup(key)
-
-                        if key == "lat_bin_profile":
-                            dim_map = {1: ('nLatBins',)}
-                        elif key.startswith("vert_profile_"):
-                            dim_map = {1: ('nVertLevels',)}
-                        elif key.startswith("vert_bin_profile_"):
-                            dim_map = {1: ('nLevelBins',)}
-                        elif key.startswith("vert_hgt_profile_"):
-                            dim_map = {1: ('nHeightLevels',)}
-                        elif key.startswith("vert_pres_profile_"):
-                            dim_map = {1: ('nPressureLevels',)}
-                        else:
-                            raise ValueError(f"Unknown 1D result key: {key}")
-
-                        write_stat_group(grp, stat_dict, dim_map)
-
-                elif dim_type == "2D":
-                    for key, stat_dict in dim_data.items():
-                        grp = dim_grp.createGroup(key)
-
-                        if key == "lat_lon":
-                            dim_map = {2: ('nLatBins', 'nLonBins')}
-                        elif key == "lat_lev":
-                            dim_map = {2: ('nLatBins', 'nLevelBins')}
-                        elif key == "lat_hgt":
-                            dim_map = {2: ('nLatBins', 'nHeightLevels')}
-                        elif key == "lat_pres":
-                            dim_map = {2: ('nLatBins', 'nPressureLevels')}
-                        else:
-                            raise ValueError(f"Unknown 2D result key: {key}")
-
-                        write_stat_group(grp, stat_dict, dim_map)
-
-                elif dim_type == "3D":
-                    for key, stat_dict in dim_data.items():
-                        grp = dim_grp.createGroup(key)
-
-                        if key == "lat_lon_lev":
-                            dim_map = {3: ('nLatBins', 'nLonBins', 'nLevelBins')}
-                        elif key == "lat_lon_hgt":
-                            dim_map = {3: ('nLatBins', 'nLonBins', 'nHeightLevels')}
-                        elif key == "lat_lon_pres":
-                            dim_map = {3: ('nLatBins', 'nLonBins', 'nPressureLevels')}
-                        else:
-                            raise ValueError(f"Unknown 3D result key: {key}")
-
-                        write_stat_group(grp, stat_dict, dim_map)
+                        write_stat_group(grp, stat_dict, _result_dim_map(dim_type, key))
 
                 else:
                     raise ValueError(f"Unknown dim_type: {dim_type}")

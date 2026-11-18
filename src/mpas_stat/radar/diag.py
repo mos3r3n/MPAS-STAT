@@ -45,7 +45,7 @@ from ..obs.common import (
     load_config, resolve_diag_base_dir, generate_cycles, generate_forecast_leads,
     resolve_time_settings, lead_valid_time_allowed, radar_composite_diag_file,
 )
-from ..obs.diag import build_hofx_forecast_filename
+from ..obs.reader import build_hofx_forecast_filename
 from .common import resolve_radar_settings, process_one_cycle, default_embed_script_path
 
 

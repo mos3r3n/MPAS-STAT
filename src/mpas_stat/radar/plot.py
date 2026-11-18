@@ -47,7 +47,7 @@ from ..obs.common import (
     resolve_time_settings, lead_valid_time_allowed, radar_composite_diag_file,
     radar_diag_sensor_has_files,
 )
-from ..obs.plot import _build_forecast_experiments
+from ..obs.experiments import _build_forecast_experiments
 from .common import resolve_radar_settings, aggregate_radar_cycles
 
 # ============================================================================
@@ -116,8 +116,6 @@ def plot_time_series(ax, times, data, label, x_label, y_label, main_label, lines
 
 def plot_performance_diagram(ax, pod, far, exp_labels, lead_times, title="Performance Diagram"):
     """pod, far: arrays shaped (n_exp, n_times)."""
-    n_exp = len(exp_labels)
-
     sr = 1.0 - far
 
     # vmin/vmax (the eventual axes limits) are computed FIRST, before any

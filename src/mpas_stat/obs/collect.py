@@ -1,0 +1,555 @@
+"""Readers for the observation-space graphics stage.
+
+Each collect_obs_* function pulls one (experiment, OMB|OMA|OMF) worth of
+statistics back out of the diagnosis netCDF files written by
+mpas_stat.obs.diag, in the dict shape the matching
+mpas_stat.graphics plot_* function expects.
+"""
+import os
+
+import netCDF4 as nc
+import numpy as np
+
+from ..core.bootstrap import bootstrap_mean_ci
+from ..core.timeutils import datetime_to_cycle
+from .common import (
+    STAT_KEYS,
+    STAT_KEYS_2D,
+    nc_group_name,
+    obs_diag_file,
+    obs_diag_forecast_file,
+)
+
+# ============================================================================
+# Readers -- pull one (experiment, OMB|OMA) worth of data back out of the
+# diagnosis netCDF files written by src/mpas_stat/obs/diag.py.
+# ============================================================================
+
+def _subgroup(grp, path):
+    """grp.groups[path[0]].groups[path[1]]..., or None if any level is missing."""
+    for name in path:
+        if name not in grp.groups:
+            return None
+        grp = grp.groups[name]
+    return grp
+
+
+def _gather_stat_arrays(ncfiles, diagtype, display_vars, raw_vars, group_path,
+                        stat_keys, coord_vars, coord_trigger=None):
+    """Scan diagnosis files and gather one array per (statistic, variable, file).
+
+    For every existing file in `ncfiles` this reads, from
+    <diagtype>/<var>/<group_path...>/<stat>, each statistic in `stat_keys`
+    for each display variable, and the coordinate variables `coord_vars`
+    from the first file that has all of `coord_trigger` (default:
+    `coord_vars`).
+
+    Returns ``(coords, per_stat_per_var, hits)``: coords is a list of float64
+    arrays (or None if no file had them), per_stat_per_var[stat][var] is the
+    list of gathered float64 arrays in file order, and hits lists the indices
+    into `ncfiles` of files that contributed at least one array.
+    """
+    per_stat_per_var = {stat_disp: {v: [] for v in display_vars} for stat_disp, _ in stat_keys}
+    coords = None
+    trigger = coord_vars if coord_trigger is None else coord_trigger
+    hits = []
+
+    for ifile, ncfile in enumerate(ncfiles):
+        if not os.path.exists(ncfile):
+            continue
+        with nc.Dataset(ncfile, "r") as ds:
+            if coords is None and all(c in ds.variables for c in trigger):
+                coords = [np.asarray(ds.variables[c][:], dtype=np.float64) for c in coord_vars]
+            if diagtype not in ds.groups:
+                continue
+            diag_grp = ds.groups[diagtype]
+            got_any = False
+            for var, raw in zip(display_vars, raw_vars):
+                stat_grp = _subgroup(diag_grp, (nc_group_name(raw),) + tuple(group_path))
+                if stat_grp is None:
+                    continue
+                for stat_disp, _ in stat_keys:
+                    if stat_disp in stat_grp.variables:
+                        arr = np.asarray(stat_grp.variables[stat_disp][...], dtype=np.float64)
+                        per_stat_per_var[stat_disp][var].append(arr)
+                        got_any = True
+            if got_any:
+                hits.append(ifile)
+    return coords, per_stat_per_var, hits
+
+
+def collect_obs_stats_0d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
+                        display_vars, raw_vars, domains):
+    """Stats[cycle][display_var]['0D'][domain][stat] for one (exp, diagtype),
+    read from disk -- the same shape mpas_stat.graphics.functions.plot_time_series_0d
+    expects for one entry of its top-level `Stats` dict."""
+    out = {}
+    for cycle_time in cycles:
+        ncfile = obs_diag_file(diag_base_dir, exp_name, diag_obs, cycle_time)
+        if not os.path.exists(ncfile):
+            print(f"WARNING: missing file: {ncfile}")
+            continue
+        cycle = datetime_to_cycle(cycle_time)
+        with nc.Dataset(ncfile, "r") as ds:
+            if diagtype not in ds.groups:
+                continue
+            diag_grp = ds.groups[diagtype]
+            cycle_entry = {}
+            for var, raw in zip(display_vars, raw_vars):
+                gname = nc_group_name(raw)
+                if gname not in diag_grp.groups:
+                    continue
+                var_grp = diag_grp.groups[gname]
+                if "0D" not in var_grp.groups:
+                    continue
+                d0 = var_grp.groups["0D"]
+                var_entry = {}
+                for domain in domains:
+                    if domain not in d0.groups:
+                        continue
+                    region_grp = d0.groups[domain]
+                    stat_vals = {}
+                    for stat_disp, _ in STAT_KEYS:
+                        if stat_disp in region_grp.variables:
+                            val = float(region_grp.variables[stat_disp][...])
+                            if np.isfinite(val):
+                                stat_vals[stat_disp] = val
+                    if stat_vals:
+                        var_entry[domain] = stat_vals
+                if var_entry:
+                    cycle_entry[var] = {"0D": var_entry}
+            if cycle_entry:
+                out[cycle] = cycle_entry
+    return out
+
+
+def collect_obs_profiles_1d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
+                           display_vars, raw_vars, profile_key, coord_label, invert_y):
+    """{stat_disp: {display_var: entry}} time-averaged profiles for one
+    (exp, diagtype), read from disk -- entry shape matches what
+    mpas_stat.graphics.functions.plot_profiles_1d expects."""
+    ncfiles = [obs_diag_file(diag_base_dir, exp_name, diag_obs, c) for c in cycles]
+    coords, per_stat_per_var, _ = _gather_stat_arrays(
+        ncfiles, diagtype, display_vars, raw_vars, ("1D", profile_key), STAT_KEYS, ["Levels"])
+
+    result = {stat_disp: {} for stat_disp, _ in STAT_KEYS}
+    if coords is None:
+        return result
+    coord, = coords
+
+    for stat_disp, _ in STAT_KEYS:
+        for var in display_vars:
+            profiles = per_stat_per_var[stat_disp][var]
+            if not profiles:
+                continue
+            mean_profile = np.nanmean(np.stack(profiles, axis=0), axis=0)
+            if not np.any(np.isfinite(mean_profile)):
+                continue
+            result[stat_disp][var] = {
+                "mean_profile": mean_profile,
+                "ci_low": None,
+                "ci_high": None,
+                "coord": coord,
+                "coord_label": coord_label,
+                "invert_y": invert_y,
+            }
+    return result
+
+
+def collect_obs_lat_lon_2d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
+                          display_vars, raw_vars):
+    """{stat_disp: {display_var: entry}} time-averaged lat-lon maps for one
+    (exp, diagtype), read from disk -- entry shape matches what
+    mpas_stat.graphics.functions.plot_lat_lon_2d expects."""
+    ncfiles = [obs_diag_file(diag_base_dir, exp_name, diag_obs, c) for c in cycles]
+    coords, per_stat_per_var, _ = _gather_stat_arrays(
+        ncfiles, diagtype, display_vars, raw_vars, ("2D", "lat_lon"), STAT_KEYS_2D,
+        ["LatBins2D", "LonBins2D"], coord_trigger=["LatBins2D"])
+
+    result = {stat_disp: {} for stat_disp, _ in STAT_KEYS_2D}
+    if coords is None:
+        return result
+    lat, lon = coords
+
+    for stat_disp, _ in STAT_KEYS_2D:
+        for var in display_vars:
+            maps = per_stat_per_var[stat_disp][var]
+            if not maps:
+                continue
+            samples = np.stack(maps, axis=0)
+            data = np.nanmean(samples, axis=0)
+            if not np.any(np.isfinite(data)):
+                continue
+            result[stat_disp][var] = {
+                "data": data,
+                # Required by mpas_stat.graphics.functions._draw_2d_panels
+                # even though relative_reduction_statistics is empty below
+                # (so it is never actually used for a % difference).
+                "samples": samples,
+                "lat": lat,
+                "lon": lon,
+            }
+    return result
+
+
+def collect_obs_time_level_2d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
+                             display_vars, raw_vars, profile_key, coord_label, invert_y):
+    """{stat_disp: {display_var: entry}} cycle-resolved (level x cycle)
+    Hovmoller data for one (exp, diagtype), read from disk -- entry shape
+    matches what mpas_stat.graphics.functions.plot_time_level_2d expects.
+
+    Reuses the SAME per-cycle 1D profile groups collect_obs_profiles_1d
+    reads (vert_pres_profile_<domain> / vert_hgt_profile_<domain> /
+    lat_bin_profile) -- no new statistics-stage computation, just kept
+    cycle-resolved (stacked, not time-averaged) instead of collapsed to one
+    mean profile. Mirrors mpas_stat.graphics.io.collect_time_level_2d
+    exactly (each cycle's profile is a single value, so no bootstrap CI is
+    computed here -- plot_time_level_2d draws it as-is)."""
+    ncfiles = [obs_diag_file(diag_base_dir, exp_name, diag_obs, c) for c in cycles]
+    coords, per_stat_per_var, hits = _gather_stat_arrays(
+        ncfiles, diagtype, display_vars, raw_vars, ("1D", profile_key), STAT_KEYS, ["Levels"])
+    cycle_labels = [datetime_to_cycle(cycles[i]) for i in hits]
+
+    result = {stat_disp: {} for stat_disp, _ in STAT_KEYS}
+    if coords is None or not cycle_labels:
+        return result
+    coord, = coords
+
+    for stat_disp, _ in STAT_KEYS:
+        for var in display_vars:
+            profiles = per_stat_per_var[stat_disp][var]
+            if len(profiles) != len(cycle_labels):
+                # A variable missing from some cycles can't form a clean
+                # (n_cycles, n_levels) matrix -- skip rather than
+                # misalign cycles and levels.
+                continue
+            data = np.stack(profiles, axis=0)
+            if not np.any(np.isfinite(data)):
+                continue
+            result[stat_disp][var] = {
+                "data":        data,
+                "samples":     data,
+                "times":       cycle_labels,
+                "coord":       coord,
+                "coord_label": coord_label,
+                "invert_y":    invert_y,
+            }
+    return result
+
+
+def collect_obs_lat_vert_2d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
+                           display_vars, raw_vars, coord_label, invert_y, boot):
+    """{stat_disp: {display_var: entry}} time-averaged (level x latitude)
+    cross-sections for one (exp, diagtype), read from disk -- entry shape
+    matches what mpas_stat.graphics.functions.plot_lat_vert_2d expects
+    (x_key="lat", y_key="vert", y_label_key="vert_label",
+    invert_y_key="invert_y"). Bootstrap-averaged across cycles exactly like
+    mpas_stat.graphics.io.collect_lat_vert_2d does for the model-space
+    lat_lev/lat_hgt/lat_pres product.
+
+    Not meaningful for radiances (bin_method LATITUDE, no 2D/lat_vert group
+    written) -- callers must skip that case; see
+    mpas_stat.obs.diag.compute_stats_2d_lat_vert()."""
+    ncfiles = [obs_diag_file(diag_base_dir, exp_name, diag_obs, c) for c in cycles]
+    coords, per_stat_per_var, _ = _gather_stat_arrays(
+        ncfiles, diagtype, display_vars, raw_vars, ("2D", "lat_vert"), STAT_KEYS_2D,
+        ["LatBins2D", "Levels"])
+
+    result = {stat_disp: {} for stat_disp, _ in STAT_KEYS_2D}
+    if coords is None:
+        return result
+    lat, levels = coords
+
+    for stat_disp, _ in STAT_KEYS_2D:
+        for var in display_vars:
+            sections = per_stat_per_var[stat_disp][var]
+            if not sections:
+                continue
+            # On disk (2D/lat_vert/<stat>), arrays are (nLevels, nLatBins2D)
+            # -- level-major, matching compute_stats_2d_lat_vert() and the
+            # 1D vertical profiles' own level-first convention.mpas_stats_
+            # graphic_functions._draw_2d_panels (x_key="lat", y_key="vert",
+            # transpose_data=True) instead expects (nlat, nlev) -- it
+            # transposes internally before pcolormesh(x=lat, y=vert, ...).
+            # Swap axes here, once, at read time.
+            samples = np.stack(sections, axis=0).transpose(0, 2, 1)
+            mean_data, ci_low, ci_high = bootstrap_mean_ci(
+                samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+            if not np.any(np.isfinite(mean_data)):
+                continue
+            result[stat_disp][var] = {
+                "data":       mean_data,
+                "samples":    samples,
+                "ci_low":     ci_low,
+                "ci_high":    ci_high,
+                "lat":        lat,
+                "vert":       levels,
+                "vert_label": coord_label,
+                "invert_y":   invert_y,
+            }
+    return result
+
+
+def collect_obs_forecast_lead_0d(diag_base_dir, exp_name, diag_obs, cycles, leads,
+                                display_vars, raw_vars, domain, stat_disp, boot):
+    """{display_var: {leads, data, samples, ci_low, ci_high}} -- domain-
+    averaged OMF statistic vs. forecast lead time, read from the per-(init
+    cycle, lead hour) obs-space forecast diagnosis files
+    (obs_diag_forecast_file()) and bootstrap-aggregated over initialization
+    cycles at each lead, exactly like
+    mpas_stat.graphics.io.collect_forecast_lead_0d does for the model-space
+    ExtendedFC files -- so the result can be fed straight into
+    mpas_stat.graphics.functions.plot_forecast_lead_0d unmodified."""
+    out = {}
+    for var, raw in zip(display_vars, raw_vars):
+        gname = nc_group_name(raw)
+        samples = []
+        for cycle_time in cycles:
+            row = []
+            got_any = False
+            for lead in leads:
+                ncfile = obs_diag_forecast_file(diag_base_dir, exp_name, diag_obs, cycle_time, lead)
+                val = np.nan
+                if os.path.exists(ncfile):
+                    with nc.Dataset(ncfile, "r") as ds:
+                        try:
+                            val = float(
+                                ds.groups["omf"].groups[gname].groups["0D"]
+                                  .groups[domain].variables[stat_disp][...]
+                            )
+                            got_any = True
+                        except Exception:
+                            pass
+                row.append(val)
+            if got_any:
+                samples.append(row)
+
+        if not samples:
+            continue
+
+        samples = np.asarray(samples, dtype=np.float64)
+        mean_data, ci_low, ci_high = bootstrap_mean_ci(
+            samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+
+        out[var] = {
+            "data": mean_data,
+            "mean_profile": mean_data,
+            "samples": samples,
+            "ci_low": ci_low,
+            "ci_high": ci_high,
+            "leads": np.asarray(leads, dtype=np.float64),
+        }
+    return out
+
+
+# ----------------------------------------------------------------------------
+# OMF "extended-forecast skill" readers, beyond forecast_lead_0d above --
+# the obs-space counterparts of mpas_stat.graphics.io's
+# collect_forecast_profiles_1d / collect_forecast_lat_lon_2d /
+# collect_forecast_lat_vert_2d / collect_forecast_time_level_2d, reading the
+# same OMF diagnosis files (obs_diag_forecast_file(), "omf" group) as
+# collect_obs_forecast_lead_0d rather than model-space mpasstat forecast
+# files. Each is bootstrap-aggregated over initialization cycles, exactly
+# like their model-space counterparts (unlike the plain time-mean OMB/OMA
+# 1D/2D collectors above, which intentionally skip bootstrap CI -- see
+# MPAS-STAT/docs/USER_GUIDE.md's "Known limitations").
+# ----------------------------------------------------------------------------
+
+def collect_obs_forecast_profiles_1d(diag_base_dir, exp_name, diag_obs, cycles, lead,
+                                     display_vars, raw_vars, profile_key, coord_label,
+                                     invert_y, boot):
+    """{stat_disp: {display_var: entry}} at one fixed extended-forecast lead
+    hour, bootstrap-aggregated over initialization cycles -- mirrors
+    mpas_stat.graphics.io.collect_forecast_profiles_1d; entry shape matches
+    what plot_profiles_1d expects (same as collect_obs_profiles_1d's, plus
+    a bootstrap ci_low/ci_high and a lead_hour tag)."""
+    ncfiles = [obs_diag_forecast_file(diag_base_dir, exp_name, diag_obs, c, lead) for c in cycles]
+    coords, per_stat_per_var, _ = _gather_stat_arrays(
+        ncfiles, "omf", display_vars, raw_vars, ("1D", profile_key), STAT_KEYS, ["Levels"])
+
+    result = {stat_disp: {} for stat_disp, _ in STAT_KEYS}
+    if coords is None:
+        return result
+    coord, = coords
+
+    for stat_disp, _ in STAT_KEYS:
+        for var in display_vars:
+            profiles = per_stat_per_var[stat_disp][var]
+            if not profiles:
+                continue
+            samples = np.stack(profiles, axis=0)
+            if not np.any(np.isfinite(samples)):
+                continue
+            mean_profile, ci_low, ci_high = bootstrap_mean_ci(
+                samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+            result[stat_disp][var] = {
+                "mean_profile": mean_profile,
+                "data":         mean_profile,
+                "samples":      samples,
+                "ci_low":       ci_low,
+                "ci_high":      ci_high,
+                "coord":        coord,
+                "coord_label":  coord_label,
+                "invert_y":     invert_y,
+                "lead_hour":    lead,
+            }
+    return result
+
+
+def collect_obs_forecast_lat_lon_2d(diag_base_dir, exp_name, diag_obs, cycles, lead,
+                                    display_vars, raw_vars, boot):
+    """{stat_disp: {display_var: entry}} lat-lon map at one fixed
+    extended-forecast lead hour, bootstrap-aggregated over initialization
+    cycles -- mirrors mpas_stat.graphics.io.collect_forecast_lat_lon_2d;
+    entry shape matches what plot_lat_lon_2d expects (same as
+    collect_obs_lat_lon_2d's, plus bootstrap ci_low/ci_high and a
+    lead_hour tag)."""
+    ncfiles = [obs_diag_forecast_file(diag_base_dir, exp_name, diag_obs, c, lead) for c in cycles]
+    coords, per_stat_per_var, _ = _gather_stat_arrays(
+        ncfiles, "omf", display_vars, raw_vars, ("2D", "lat_lon"), STAT_KEYS_2D,
+        ["LatBins2D", "LonBins2D"], coord_trigger=["LatBins2D"])
+
+    result = {stat_disp: {} for stat_disp, _ in STAT_KEYS_2D}
+    if coords is None:
+        return result
+    lat, lon = coords
+
+    for stat_disp, _ in STAT_KEYS_2D:
+        for var in display_vars:
+            maps = per_stat_per_var[stat_disp][var]
+            if not maps:
+                continue
+            samples = np.stack(maps, axis=0)
+            if not np.any(np.isfinite(samples)):
+                continue
+            mean_data, ci_low, ci_high = bootstrap_mean_ci(
+                samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+            result[stat_disp][var] = {
+                "data":      mean_data,
+                "samples":   samples,
+                "ci_low":    ci_low,
+                "ci_high":   ci_high,
+                "lat":       lat,
+                "lon":       lon,
+                "lead_hour": lead,
+            }
+    return result
+
+
+def collect_obs_forecast_lat_vert_2d(diag_base_dir, exp_name, diag_obs, cycles, lead,
+                                     display_vars, raw_vars, coord_label, invert_y, boot):
+    """{stat_disp: {display_var: entry}} (level x latitude) cross-section at
+    one fixed extended-forecast lead hour, bootstrap-aggregated over
+    initialization cycles -- mirrors
+    mpas_stat.graphics.io.collect_forecast_lat_vert_2d; entry shape matches
+    what plot_lat_vert_2d expects (same as collect_obs_lat_vert_2d's, plus
+    a lead_hour tag). Not meaningful for radiances (bin_method LATITUDE, no
+    2D/lat_vert group written) -- callers must skip that case."""
+    ncfiles = [obs_diag_forecast_file(diag_base_dir, exp_name, diag_obs, c, lead) for c in cycles]
+    coords, per_stat_per_var, _ = _gather_stat_arrays(
+        ncfiles, "omf", display_vars, raw_vars, ("2D", "lat_vert"), STAT_KEYS_2D,
+        ["LatBins2D", "Levels"])
+
+    result = {stat_disp: {} for stat_disp, _ in STAT_KEYS_2D}
+    if coords is None:
+        return result
+    lat, levels = coords
+
+    for stat_disp, _ in STAT_KEYS_2D:
+        for var in display_vars:
+            sections = per_stat_per_var[stat_disp][var]
+            if not sections:
+                continue
+            # On disk (2D/lat_vert/<stat>), arrays are (nLevels, nLatBins2D)
+            # -- _draw_2d_panels (x_key="lat", transpose_data=True) needs
+            # (nlat, nlev) pre-transpose. Swap axes here, once, at read
+            # time -- see collect_obs_lat_vert_2d's identical note.
+            samples = np.stack(sections, axis=0).transpose(0, 2, 1)
+            if not np.any(np.isfinite(samples)):
+                continue
+            mean_data, ci_low, ci_high = bootstrap_mean_ci(
+                samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+            result[stat_disp][var] = {
+                "data":       mean_data,
+                "samples":    samples,
+                "ci_low":     ci_low,
+                "ci_high":    ci_high,
+                "lat":        lat,
+                "vert":       levels,
+                "vert_label": coord_label,
+                "invert_y":   invert_y,
+                "lead_hour":  lead,
+            }
+    return result
+
+
+def collect_obs_forecast_time_level_2d(diag_base_dir, exp_name, diag_obs, cycles, leads,
+                                       display_vars, raw_vars, profile_key, coord_label,
+                                       invert_y, stat_disp, boot):
+    """{display_var: entry} lead-time x level cross-section for ONE
+    statistic, spanning every configured forecast lead hour -- mirrors
+    mpas_stat.graphics.io.collect_forecast_time_level_2d exactly: each
+    initialization cycle contributes one (n_leads, n_levels) block
+    (NaN-filled where a lead is missing for that cycle), stacked into an
+    (n_cycles, n_leads, n_levels) sample cube and bootstrap-averaged over
+    cycles -- so, unlike the OMB/OMA lev-time Hovmoller (plain per-cycle
+    values, no bootstrap), this supports the same significance-vs-reference
+    testing as the other 2-D comparison products. Feeds
+    plot_forecast_time_level_2d directly."""
+    out = {}
+    for var, raw in zip(display_vars, raw_vars):
+        gname = nc_group_name(raw)
+        coord = None
+        nlev = None
+        blocks = []  # one (n_leads, n_levels) block per initialization cycle
+
+        for cycle_time in cycles:
+            row = None
+            got_any = False
+            for ilead, lead in enumerate(leads):
+                ncfile = obs_diag_forecast_file(diag_base_dir, exp_name, diag_obs, cycle_time, lead)
+                if not os.path.exists(ncfile):
+                    continue
+                with nc.Dataset(ncfile, "r") as ds:
+                    if coord is None and "Levels" in ds.variables:
+                        coord = np.asarray(ds.variables["Levels"][:], dtype=np.float64)
+                        nlev = coord.shape[0]
+                    if "omf" not in ds.groups or gname not in ds.groups["omf"].groups:
+                        continue
+                    var_grp = ds.groups["omf"].groups[gname]
+                    if "1D" not in var_grp.groups or profile_key not in var_grp.groups["1D"].groups:
+                        continue
+                    prof_grp = var_grp.groups["1D"].groups[profile_key]
+                    if stat_disp not in prof_grp.variables:
+                        continue
+                    arr = np.asarray(prof_grp.variables[stat_disp][:], dtype=np.float64)
+                    if nlev is None:
+                        nlev = arr.shape[0]
+                    if row is None:
+                        row = np.full((len(leads), nlev), np.nan, dtype=np.float64)
+                    row[ilead, :] = arr
+                    got_any = True
+
+            if got_any:
+                blocks.append(row)
+
+        if not blocks or coord is None:
+            continue
+
+        samples = np.asarray(blocks, dtype=np.float64)  # (n_cycles, n_leads, n_levels)
+        if not np.any(np.isfinite(samples)):
+            continue
+        mean_data, ci_low, ci_high = bootstrap_mean_ci(
+            samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+
+        out[var] = {
+            "data":        mean_data,
+            "samples":     samples,
+            "ci_low":      ci_low,
+            "ci_high":     ci_high,
+            "leads":       np.asarray(leads, dtype=np.float64),
+            "coord":       coord,
+            "coord_label": coord_label,
+            "invert_y":    invert_y,
+        }
+    return out
