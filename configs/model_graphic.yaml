@@ -47,6 +47,11 @@ statistics:
 
 region: Global
 
+# How cycles are combined in time-averaged figures: "pooled" (default; RMS =
+# sqrt(sum w*rms^2 / sum w) etc., USER_GUIDE section 5.2) or "mean" (plain mean
+# of per-cycle statistics, the pre-2026-11 behaviour).
+time_aggregation: pooled
+
 # Percent-difference colour bars (lat_lon_2d, lat_vert_2d, time_level_2d,
 # forecast_lat_lon_2d, forecast_lat_vert_2d, forecast_time_level_2d) now
 # auto-scale to +/- the largest |% difference| actually present in each

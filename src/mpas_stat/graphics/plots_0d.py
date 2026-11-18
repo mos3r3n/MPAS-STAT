@@ -6,7 +6,8 @@ import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ..core.bootstrap import bootstrap_reduction_ci, get_bootstrap_settings, safe_nanmean
+from ..core.bootstrap import get_bootstrap_settings
+from ..core.pooling import entry_reduction_ci, entry_value
 from .axes import _set_compact_time_axis
 from .style import (
     _ensure_panel_ticks,
@@ -269,12 +270,9 @@ def plot_forecast_lead_0d(ForecastLead, stat_name, cfg):
             if (boot["plot_significance"] and iexp > 0
                     and ref_samples is not None
                     and entry["samples"].shape == ref_samples.shape):
-                _, ci_low, ci_high = bootstrap_reduction_ci(
-                    ref_samples, entry["samples"],
-                    n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"],
-                )
+                _, ci_low, ci_high = entry_reduction_ci(ref_entry, entry, boot)
                 threshold = _relative_ref_threshold(var_name, cfg)
-                ref_mean  = safe_nanmean(ref_samples, axis=0)
+                ref_mean  = entry_value(ref_entry)
                 small_ref = ~np.isfinite(ref_mean) | (np.abs(ref_mean) < threshold)
                 ci_low      = np.where(small_ref, np.nan, ci_low)
                 ci_high     = np.where(small_ref, np.nan, ci_high)
@@ -356,7 +354,6 @@ def plot_forecast_lead_diff_0d(ForecastLead, stat_name, cfg):
             ax.axis("off")
             continue
 
-        ref_samples = ref_entry["samples"]
         x         = ref_entry["leads"]
         has_curve = False
 
@@ -365,12 +362,9 @@ def plot_forecast_lead_diff_0d(ForecastLead, stat_name, cfg):
             if exp_entry is None:
                 continue
 
-            red, ci_low, ci_high = bootstrap_reduction_ci(
-                ref_samples, exp_entry["samples"],
-                n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"],
-            )
+            red, ci_low, ci_high = entry_reduction_ci(ref_entry, exp_entry, boot)
             threshold = _relative_ref_threshold(var_name, cfg)
-            ref_mean  = safe_nanmean(ref_samples, axis=0)
+            ref_mean  = entry_value(ref_entry)
             small_ref = ~np.isfinite(ref_mean) | (np.abs(ref_mean) < threshold)
             red     = np.where(small_ref, np.nan, red)
             ci_low  = np.where(small_ref, np.nan, ci_low)

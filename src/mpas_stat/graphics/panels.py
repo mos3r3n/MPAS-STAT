@@ -3,7 +3,8 @@ pcolormesh panel builder used by every 2-D plot type.
 """
 import numpy as np
 
-from ..core.bootstrap import bootstrap_reduction_ci, get_bootstrap_settings, safe_nanmean
+from ..core.bootstrap import get_bootstrap_settings
+from ..core.pooling import entry_reduction_ci, entry_value
 from .axes import (
     _adaptive_geo_locator,
     _apply_latitude_formatter,
@@ -185,7 +186,7 @@ def _draw_2d_panels(fig, axs, var_names, exp_names, exp_labels,
 
             plot_data, significant = _compute_panel_data(
                 entry, ref_samples, iexp, use_rel, stat_name,
-                boot, cfg, ref_key, var_name=var_name,
+                boot, cfg, ref_key, var_name=var_name, ref_entry=ref_entry,
             )
             if plot_data is None:
                 ax.axis("off")
@@ -363,23 +364,26 @@ def _mean_colorbar_limits(data_store, stat_name, cfg, exp_names, var_names,
 
 
 def _compute_panel_data(entry, ref_samples, iexp, use_rel, stat_name,
-                        boot, cfg, ref_key="samples", var_name=None):
-    """Return (plot_data, significant_mask) for a single panel."""
+                        boot, cfg, ref_key="samples", var_name=None, ref_entry=None):
+    """Return (plot_data, significant_mask) for a single panel.
+
+    Percent reductions use pooled cycle aggregation when both `entry` and
+    `ref_entry` carry a "pool" (see mpas_stat.core.pooling), else the plain
+    mean of `ref_samples` / entry[ref_key]."""
     data = entry["data"]
 
     if use_rel and iexp > 0:
         exp_samples = entry[ref_key]
         if ref_samples is None or ref_samples.shape != exp_samples.shape:
             return None, None
-        plot_data, ci_low, ci_high = bootstrap_reduction_ci(
-            ref_samples, exp_samples,
-            n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"],
-        )
+        if ref_entry is None:
+            ref_entry = {ref_key: ref_samples}
+        plot_data, ci_low, ci_high = entry_reduction_ci(ref_entry, entry, boot, key=ref_key)
         # Additional masking for near-zero absolute reference values.
         # This is especially important for QV, where tiny reference values can
         # create meaningless percent reductions.
         threshold = _relative_ref_threshold(var_name, cfg)
-        ref_mean = safe_nanmean(ref_samples, axis=0)
+        ref_mean = entry_value(ref_entry, key=ref_key)
         small_ref = ~np.isfinite(ref_mean) | (np.abs(ref_mean) < threshold)
         plot_data = np.where(small_ref, np.nan, plot_data)
         ci_low = np.where(small_ref, np.nan, ci_low)

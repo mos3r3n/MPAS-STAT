@@ -1,11 +1,28 @@
 """Statistics kernels for obs-space innovations: domain/level-binned
 (0D/1D) totals and lat-lon / lat-vert gridded (2D) statistics.
 """
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 
 from ..core.grouping import grouped_stats_1d
+
+
+def normalize_lon_range(lon_min: float, lon_max: float) -> Tuple[float, float]:
+    """Express a longitude box so that lon_min <= lon_max, allowing boxes
+    that cross the dateline: [170, -170] becomes [170, 190]. Boxes already
+    given in 0..360 (e.g. [100, 250]) are kept as-is."""
+    if lon_max < lon_min:
+        lon_max = lon_max + 360.0
+    return lon_min, lon_max
+
+
+def unwrap_longitude(lon: np.ndarray, lon_min: float) -> np.ndarray:
+    """Shift longitudes west of `lon_min` by +360 so that a box starting at
+    lon_min and extending past 180E (see normalize_lon_range) contains them.
+    Longitudes >= lon_min are returned unchanged (bit-for-bit)."""
+    lon = np.asarray(lon, dtype=np.float64)
+    return np.where(lon < lon_min, lon + 360.0, lon)
 
 
 def calculate_stats(data: np.ndarray, qc: np.ndarray,
@@ -116,6 +133,8 @@ def _apply_domain_mask(qc: Optional[np.ndarray], lat: np.ndarray, lon: np.ndarra
         return qc
 
     lat_min, lat_max, lon_min, lon_max = domain_coords
+    lon_min, lon_max = normalize_lon_range(lon_min, lon_max)
+    lon = unwrap_longitude(lon, lon_min)
     in_domain = (
         (lat >= lat_min) & (lat <= lat_max) &
         (lon >= lon_min) & (lon <= lon_max)
@@ -146,6 +165,7 @@ def compute_stats_2d_latlon(values: np.ndarray, qc: Optional[np.ndarray],
     """
     nlat = len(lat_bins) - 1
     nlon = len(lon_bins) - 1
+    lon = unwrap_longitude(lon, lon_bins[0])
 
     in_bounds = (
         (lat >= lat_bins[0]) & (lat <= lat_bins[-1]) &

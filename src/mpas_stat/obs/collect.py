@@ -10,7 +10,14 @@ import os
 import netCDF4 as nc
 import numpy as np
 
-from ..core.bootstrap import bootstrap_mean_ci
+from ..core.pooling import (
+    aggregate,
+    missing_components,
+    pool_from_rows,
+    pooled_value,
+    read_components,
+    stat_kind,
+)
 from ..core.timeutils import datetime_to_cycle
 from .common import (
     STAT_KEYS,
@@ -78,6 +85,39 @@ def _gather_stat_arrays(ncfiles, diagtype, display_vars, raw_vars, group_path,
     return coords, per_stat_per_var, hits
 
 
+def _obs_pool(per_stat_per_var, stat_disp, var, transpose=None):
+    """Pooling components (see mpas_stat.core.pooling) for one statistic of
+    one variable, from the per-file arrays _gather_stat_arrays() gathered for
+    ALL statistics: weights from Count, means from Bias, mean squares from
+    RMS (or the spread itself). None if the companions are unavailable or not
+    aligned file-by-file."""
+    kind = stat_kind(stat_disp)
+    if kind == "plain":
+        return None
+    def stack(name):
+        arrs = per_stat_per_var.get(name, {}).get(var) or []
+        return np.stack(arrs, axis=0) if arrs else None
+    value = stack(stat_disp)
+    count = stack("Count")
+    if value is None or count is None or count.shape != value.shape:
+        return None
+    w = np.where(np.isfinite(value) & np.isfinite(count), count, 0.0)
+    nan = np.full(value.shape, np.nan)
+    if kind == "mean":
+        m1, m2 = value, nan
+    elif kind == "rms":
+        m1, m2 = nan, value * value
+    else:  # std
+        bias, rms = stack("Bias"), stack("RMS")
+        if bias is None or rms is None or bias.shape != value.shape or rms.shape != value.shape:
+            return None
+        m1, m2 = bias, rms * rms
+    pool = {"kind": kind, "w": w, "m1": m1, "m2": m2}
+    if transpose is not None:
+        pool = {k: (v.transpose(transpose) if k != "kind" else v) for k, v in pool.items()}
+    return pool
+
+
 def collect_obs_stats_0d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
                         display_vars, raw_vars, domains):
     """Stats[cycle][display_var]['0D'][domain][stat] for one (exp, diagtype),
@@ -124,7 +164,8 @@ def collect_obs_stats_0d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
 
 
 def collect_obs_profiles_1d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
-                           display_vars, raw_vars, profile_key, coord_label, invert_y):
+                           display_vars, raw_vars, profile_key, coord_label, invert_y,
+                           time_aggregation="mean"):
     """{stat_disp: {display_var: entry}} time-averaged profiles for one
     (exp, diagtype), read from disk -- entry shape matches what
     mpas_stat.graphics.functions.plot_profiles_1d expects."""
@@ -142,7 +183,10 @@ def collect_obs_profiles_1d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
             profiles = per_stat_per_var[stat_disp][var]
             if not profiles:
                 continue
-            mean_profile = np.nanmean(np.stack(profiles, axis=0), axis=0)
+            pool = (_obs_pool(per_stat_per_var, stat_disp, var)
+                    if time_aggregation == "pooled" else None)
+            mean_profile = (pooled_value(pool) if pool is not None
+                            else np.nanmean(np.stack(profiles, axis=0), axis=0))
             if not np.any(np.isfinite(mean_profile)):
                 continue
             result[stat_disp][var] = {
@@ -157,7 +201,7 @@ def collect_obs_profiles_1d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
 
 
 def collect_obs_lat_lon_2d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
-                          display_vars, raw_vars):
+                          display_vars, raw_vars, time_aggregation="mean"):
     """{stat_disp: {display_var: entry}} time-averaged lat-lon maps for one
     (exp, diagtype), read from disk -- entry shape matches what
     mpas_stat.graphics.functions.plot_lat_lon_2d expects."""
@@ -177,7 +221,9 @@ def collect_obs_lat_lon_2d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
             if not maps:
                 continue
             samples = np.stack(maps, axis=0)
-            data = np.nanmean(samples, axis=0)
+            pool = (_obs_pool(per_stat_per_var, stat_disp, var)
+                    if time_aggregation == "pooled" else None)
+            data = pooled_value(pool) if pool is not None else np.nanmean(samples, axis=0)
             if not np.any(np.isfinite(data)):
                 continue
             result[stat_disp][var] = {
@@ -186,6 +232,7 @@ def collect_obs_lat_lon_2d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
                 # even though relative_reduction_statistics is empty below
                 # (so it is never actually used for a % difference).
                 "samples": samples,
+                "pool": pool,
                 "lat": lat,
                 "lon": lon,
             }
@@ -238,7 +285,8 @@ def collect_obs_time_level_2d(diag_base_dir, exp_name, diagtype, diag_obs, cycle
 
 
 def collect_obs_lat_vert_2d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
-                           display_vars, raw_vars, coord_label, invert_y, boot):
+                           display_vars, raw_vars, coord_label, invert_y, boot,
+                           time_aggregation="mean"):
     """{stat_disp: {display_var: entry}} time-averaged (level x latitude)
     cross-sections for one (exp, diagtype), read from disk -- entry shape
     matches what mpas_stat.graphics.functions.plot_lat_vert_2d expects
@@ -273,13 +321,15 @@ def collect_obs_lat_vert_2d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
             # transposes internally before pcolormesh(x=lat, y=vert, ...).
             # Swap axes here, once, at read time.
             samples = np.stack(sections, axis=0).transpose(0, 2, 1)
-            mean_data, ci_low, ci_high = bootstrap_mean_ci(
-                samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+            pool = (_obs_pool(per_stat_per_var, stat_disp, var, transpose=(0, 2, 1))
+                    if time_aggregation == "pooled" else None)
+            mean_data, ci_low, ci_high = aggregate(samples, pool, boot)
             if not np.any(np.isfinite(mean_data)):
                 continue
             result[stat_disp][var] = {
                 "data":       mean_data,
                 "samples":    samples,
+                "pool":    pool,
                 "ci_low":     ci_low,
                 "ci_high":    ci_high,
                 "lat":        lat,
@@ -291,7 +341,8 @@ def collect_obs_lat_vert_2d(diag_base_dir, exp_name, diagtype, diag_obs, cycles,
 
 
 def collect_obs_forecast_lead_0d(diag_base_dir, exp_name, diag_obs, cycles, leads,
-                                display_vars, raw_vars, domain, stat_disp, boot):
+                                display_vars, raw_vars, domain, stat_disp, boot,
+                                time_aggregation="mean"):
     """{display_var: {leads, data, samples, ci_low, ci_high}} -- domain-
     averaged OMF statistic vs. forecast lead time, read from the per-(init
     cycle, lead hour) obs-space forecast diagnosis files
@@ -304,37 +355,43 @@ def collect_obs_forecast_lead_0d(diag_base_dir, exp_name, diag_obs, cycles, lead
     for var, raw in zip(display_vars, raw_vars):
         gname = nc_group_name(raw)
         samples = []
+        comp_rows = []
         for cycle_time in cycles:
             row = []
+            crow = []
             got_any = False
             for lead in leads:
                 ncfile = obs_diag_forecast_file(diag_base_dir, exp_name, diag_obs, cycle_time, lead)
                 val = np.nan
+                comps = missing_components()
                 if os.path.exists(ncfile):
                     with nc.Dataset(ncfile, "r") as ds:
                         try:
-                            val = float(
-                                ds.groups["omf"].groups[gname].groups["0D"]
-                                  .groups[domain].variables[stat_disp][...]
-                            )
+                            grp = ds.groups["omf"].groups[gname].groups["0D"].groups[domain]
+                            comps = read_components(grp, stat_disp)
+                            val = float(comps[0])
                             got_any = True
                         except Exception:
-                            pass
+                            comps = missing_components()
                 row.append(val)
+                crow.append(comps)
             if got_any:
                 samples.append(row)
+                comp_rows.append(crow)
 
         if not samples:
             continue
 
         samples = np.asarray(samples, dtype=np.float64)
-        mean_data, ci_low, ci_high = bootstrap_mean_ci(
-            samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+        pool = (pool_from_rows(stat_disp, comp_rows)
+                if time_aggregation == "pooled" and stat_kind(stat_disp) != "plain" else None)
+        mean_data, ci_low, ci_high = aggregate(samples, pool, boot)
 
         out[var] = {
             "data": mean_data,
             "mean_profile": mean_data,
             "samples": samples,
+            "pool": pool,
             "ci_low": ci_low,
             "ci_high": ci_high,
             "leads": np.asarray(leads, dtype=np.float64),
@@ -357,7 +414,7 @@ def collect_obs_forecast_lead_0d(diag_base_dir, exp_name, diag_obs, cycles, lead
 
 def collect_obs_forecast_profiles_1d(diag_base_dir, exp_name, diag_obs, cycles, lead,
                                      display_vars, raw_vars, profile_key, coord_label,
-                                     invert_y, boot):
+                                     invert_y, boot, time_aggregation="mean"):
     """{stat_disp: {display_var: entry}} at one fixed extended-forecast lead
     hour, bootstrap-aggregated over initialization cycles -- mirrors
     mpas_stat.graphics.io.collect_forecast_profiles_1d; entry shape matches
@@ -380,12 +437,14 @@ def collect_obs_forecast_profiles_1d(diag_base_dir, exp_name, diag_obs, cycles, 
             samples = np.stack(profiles, axis=0)
             if not np.any(np.isfinite(samples)):
                 continue
-            mean_profile, ci_low, ci_high = bootstrap_mean_ci(
-                samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+            pool = (_obs_pool(per_stat_per_var, stat_disp, var, transpose=None)
+                    if time_aggregation == "pooled" else None)
+            mean_profile, ci_low, ci_high = aggregate(samples, pool, boot)
             result[stat_disp][var] = {
                 "mean_profile": mean_profile,
                 "data":         mean_profile,
                 "samples":      samples,
+                "pool":      pool,
                 "ci_low":       ci_low,
                 "ci_high":      ci_high,
                 "coord":        coord,
@@ -397,7 +456,7 @@ def collect_obs_forecast_profiles_1d(diag_base_dir, exp_name, diag_obs, cycles, 
 
 
 def collect_obs_forecast_lat_lon_2d(diag_base_dir, exp_name, diag_obs, cycles, lead,
-                                    display_vars, raw_vars, boot):
+                                    display_vars, raw_vars, boot, time_aggregation="mean"):
     """{stat_disp: {display_var: entry}} lat-lon map at one fixed
     extended-forecast lead hour, bootstrap-aggregated over initialization
     cycles -- mirrors mpas_stat.graphics.io.collect_forecast_lat_lon_2d;
@@ -422,11 +481,13 @@ def collect_obs_forecast_lat_lon_2d(diag_base_dir, exp_name, diag_obs, cycles, l
             samples = np.stack(maps, axis=0)
             if not np.any(np.isfinite(samples)):
                 continue
-            mean_data, ci_low, ci_high = bootstrap_mean_ci(
-                samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+            pool = (_obs_pool(per_stat_per_var, stat_disp, var, transpose=None)
+                    if time_aggregation == "pooled" else None)
+            mean_data, ci_low, ci_high = aggregate(samples, pool, boot)
             result[stat_disp][var] = {
                 "data":      mean_data,
                 "samples":   samples,
+                "pool":   pool,
                 "ci_low":    ci_low,
                 "ci_high":   ci_high,
                 "lat":       lat,
@@ -437,7 +498,8 @@ def collect_obs_forecast_lat_lon_2d(diag_base_dir, exp_name, diag_obs, cycles, l
 
 
 def collect_obs_forecast_lat_vert_2d(diag_base_dir, exp_name, diag_obs, cycles, lead,
-                                     display_vars, raw_vars, coord_label, invert_y, boot):
+                                     display_vars, raw_vars, coord_label, invert_y, boot,
+                                     time_aggregation="mean"):
     """{stat_disp: {display_var: entry}} (level x latitude) cross-section at
     one fixed extended-forecast lead hour, bootstrap-aggregated over
     initialization cycles -- mirrors
@@ -467,11 +529,13 @@ def collect_obs_forecast_lat_vert_2d(diag_base_dir, exp_name, diag_obs, cycles, 
             samples = np.stack(sections, axis=0).transpose(0, 2, 1)
             if not np.any(np.isfinite(samples)):
                 continue
-            mean_data, ci_low, ci_high = bootstrap_mean_ci(
-                samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+            pool = (_obs_pool(per_stat_per_var, stat_disp, var, transpose=(0, 2, 1))
+                    if time_aggregation == "pooled" else None)
+            mean_data, ci_low, ci_high = aggregate(samples, pool, boot)
             result[stat_disp][var] = {
                 "data":       mean_data,
                 "samples":    samples,
+                "pool":    pool,
                 "ci_low":     ci_low,
                 "ci_high":    ci_high,
                 "lat":        lat,
@@ -485,7 +549,7 @@ def collect_obs_forecast_lat_vert_2d(diag_base_dir, exp_name, diag_obs, cycles, 
 
 def collect_obs_forecast_time_level_2d(diag_base_dir, exp_name, diag_obs, cycles, leads,
                                        display_vars, raw_vars, profile_key, coord_label,
-                                       invert_y, stat_disp, boot):
+                                       invert_y, stat_disp, boot, time_aggregation="mean"):
     """{display_var: entry} lead-time x level cross-section for ONE
     statistic, spanning every configured forecast lead hour -- mirrors
     mpas_stat.graphics.io.collect_forecast_time_level_2d exactly: each
@@ -502,9 +566,11 @@ def collect_obs_forecast_time_level_2d(diag_base_dir, exp_name, diag_obs, cycles
         coord = None
         nlev = None
         blocks = []  # one (n_leads, n_levels) block per initialization cycle
+        comp_blocks = []
 
         for cycle_time in cycles:
             row = None
+            crow = None
             got_any = False
             for ilead, lead in enumerate(leads):
                 ncfile = obs_diag_forecast_file(diag_base_dir, exp_name, diag_obs, cycle_time, lead)
@@ -522,16 +588,21 @@ def collect_obs_forecast_time_level_2d(diag_base_dir, exp_name, diag_obs, cycles
                     prof_grp = var_grp.groups["1D"].groups[profile_key]
                     if stat_disp not in prof_grp.variables:
                         continue
-                    arr = np.asarray(prof_grp.variables[stat_disp][:], dtype=np.float64)
+                    comps = read_components(prof_grp, stat_disp)
+                    arr = np.asarray(comps[0], dtype=np.float64)
                     if nlev is None:
                         nlev = arr.shape[0]
                     if row is None:
                         row = np.full((len(leads), nlev), np.nan, dtype=np.float64)
+                        crow = [np.full((len(leads), nlev), fill) for fill in (np.nan, 0.0, np.nan, np.nan)]
                     row[ilead, :] = arr
+                    for comp, value in zip(crow, comps):
+                        comp[ilead, :] = value
                     got_any = True
 
             if got_any:
                 blocks.append(row)
+                comp_blocks.append(crow)
 
         if not blocks or coord is None:
             continue
@@ -539,12 +610,18 @@ def collect_obs_forecast_time_level_2d(diag_base_dir, exp_name, diag_obs, cycles
         samples = np.asarray(blocks, dtype=np.float64)  # (n_cycles, n_leads, n_levels)
         if not np.any(np.isfinite(samples)):
             continue
-        mean_data, ci_low, ci_high = bootstrap_mean_ci(
-            samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+        pool = None
+        if time_aggregation == "pooled" and stat_kind(stat_disp) != "plain":
+            pool = {"kind": stat_kind(stat_disp),
+                    "w": np.asarray([b[1] for b in comp_blocks]),
+                    "m1": np.asarray([b[2] for b in comp_blocks]),
+                    "m2": np.asarray([b[3] for b in comp_blocks])}
+        mean_data, ci_low, ci_high = aggregate(samples, pool, boot)
 
         out[var] = {
             "data":        mean_data,
             "samples":     samples,
+            "pool":        pool,
             "ci_low":      ci_low,
             "ci_high":     ci_high,
             "leads":       np.asarray(leads, dtype=np.float64),

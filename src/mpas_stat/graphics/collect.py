@@ -8,7 +8,8 @@ import os
 import netCDF4 as nc
 import numpy as np
 
-from ..core.bootstrap import bootstrap_mean_ci, get_bootstrap_settings
+from ..core.bootstrap import get_bootstrap_settings
+from ..core.pooling import PoolBuilder, aggregate, resolve_time_aggregation
 from ..core.timeutils import datetime_to_cycle, generate_cycles
 from .ncread import (
     _has_expected_ndim,
@@ -17,6 +18,7 @@ from .ncread import (
     get_mpasstat_file,
     get_profile_coord,
     read_nc_path,
+    read_stat,
 )
 
 
@@ -63,6 +65,7 @@ def collect_profiles_1d(cfg, profile_key, stat_name):
     exp_names = cfg["experiments"]["names"]
     var_names = cfg["variables"]
     boot      = get_bootstrap_settings(cfg)
+    pooled    = resolve_time_aggregation(cfg) == "pooled"
     cycles    = generate_cycles(cfg["time"]["start"], cfg["time"]["end"],
                                 cfg["time"]["interval_hours"])
 
@@ -71,6 +74,7 @@ def collect_profiles_1d(cfg, profile_key, stat_name):
         Profiles[exp_name] = {}
         for var_name in var_names:
             all_profiles = []
+            pool = PoolBuilder(stat_name)
             coord = coord_label = None
             invert_y = False
 
@@ -82,10 +86,12 @@ def collect_profiles_1d(cfg, profile_key, stat_name):
                 path = f"{var_name}/1D/{profile_key}/{stat_name}"
                 with nc.Dataset(ncfile, "r") as ds:
                     try:
-                        arr = read_nc_path(ds, path)
+                        comps = read_stat(ds, path)
+                        arr = comps[0]
                         if not _has_expected_ndim(arr, 1):
                             continue
                         all_profiles.append(np.asarray(arr, dtype=np.float64))
+                        pool.add(comps)
                         if coord is None:
                             coord, coord_label, invert_y = get_profile_coord(ds, profile_key)
                     except Exception:
@@ -96,13 +102,14 @@ def collect_profiles_1d(cfg, profile_key, stat_name):
                 continue
 
             samples = np.asarray(all_profiles)
-            mean_data, ci_low, ci_high = bootstrap_mean_ci(
-                samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+            pool_arr = pool.build() if pooled else None
+            mean_data, ci_low, ci_high = aggregate(samples, pool_arr, boot)
 
             Profiles[exp_name][var_name] = {
                 "mean_profile": mean_data,
                 "data":         mean_data,
                 "samples":      samples,
+                "pool":      pool_arr,
                 "ci_low":       ci_low,
                 "ci_high":      ci_high,
                 "coord":        coord,
@@ -166,6 +173,7 @@ def collect_lat_vert_2d(cfg, section_key, stat_name):
     exp_names = cfg["experiments"]["names"]
     var_names = cfg["variables"]
     boot      = get_bootstrap_settings(cfg)
+    pooled    = resolve_time_aggregation(cfg) == "pooled"
     cycles    = generate_cycles(cfg["time"]["start"], cfg["time"]["end"],
                                 cfg["time"]["interval_hours"])
 
@@ -174,6 +182,7 @@ def collect_lat_vert_2d(cfg, section_key, stat_name):
         LatVert[exp_name] = {}
         for var_name in var_names:
             sections = []
+            pool = PoolBuilder(stat_name)
             lat = vert = vert_label = None
             invert_y = False
 
@@ -185,10 +194,12 @@ def collect_lat_vert_2d(cfg, section_key, stat_name):
                 path = f"{var_name}/2D/{section_key}/{stat_name}"
                 with nc.Dataset(ncfile, "r") as ds:
                     try:
-                        arr = read_nc_path(ds, path)
+                        comps = read_stat(ds, path)
+                        arr = comps[0]
                         if not _has_expected_ndim(arr, 2):
                             continue
                         sections.append(np.asarray(arr, dtype=np.float64))
+                        pool.add(comps)
                         if lat is None:
                             lat, vert, vert_label, invert_y = get_lat_vert_coord(ds, section_key)
                     except Exception:
@@ -199,12 +210,13 @@ def collect_lat_vert_2d(cfg, section_key, stat_name):
                 continue
 
             samples = np.asarray(sections)
-            mean_data, ci_low, ci_high = bootstrap_mean_ci(
-                samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+            pool_arr = pool.build() if pooled else None
+            mean_data, ci_low, ci_high = aggregate(samples, pool_arr, boot)
 
             LatVert[exp_name][var_name] = {
                 "data":       mean_data,
                 "samples":    samples,
+                "pool":    pool_arr,
                 "ci_low":     ci_low,
                 "ci_high":    ci_high,
                 "lat":        lat,
@@ -220,6 +232,7 @@ def collect_lat_lon_2d(cfg, stat_name):
     exp_names = cfg["experiments"]["names"]
     var_names = cfg["variables"]
     boot      = get_bootstrap_settings(cfg)
+    pooled    = resolve_time_aggregation(cfg) == "pooled"
     cycles    = generate_cycles(cfg["time"]["start"], cfg["time"]["end"],
                                 cfg["time"]["interval_hours"])
 
@@ -228,6 +241,7 @@ def collect_lat_lon_2d(cfg, stat_name):
         LatLon[exp_name] = {}
         for var_name in var_names:
             maps = []
+            pool = PoolBuilder(stat_name)
             lat = lon = None
 
             for dt in cycles:
@@ -238,10 +252,12 @@ def collect_lat_lon_2d(cfg, stat_name):
                 path = f"{var_name}/2D/lat_lon/{stat_name}"
                 with nc.Dataset(ncfile, "r") as ds:
                     try:
-                        arr = read_nc_path(ds, path)
+                        comps = read_stat(ds, path)
+                        arr = comps[0]
                         if not _has_expected_ndim(arr, 2):
                             continue
                         maps.append(np.asarray(arr, dtype=np.float64))
+                        pool.add(comps)
                         if lat is None:
                             lat = np.asarray(ds["LatBins"][:])
                             lon = np.asarray(ds["LonBins"][:])
@@ -253,12 +269,13 @@ def collect_lat_lon_2d(cfg, stat_name):
                 continue
 
             samples = np.asarray(maps)
-            mean_data, ci_low, ci_high = bootstrap_mean_ci(
-                samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+            pool_arr = pool.build() if pooled else None
+            mean_data, ci_low, ci_high = aggregate(samples, pool_arr, boot)
 
             LatLon[exp_name][var_name] = {
                 "data":    mean_data,
                 "samples": samples,
+                "pool": pool_arr,
                 "ci_low":  ci_low,
                 "ci_high": ci_high,
                 "lat":     lat,
@@ -353,6 +370,7 @@ def collect_lat_lon_slice_2d(cfg, stat_name, section_cfg):
     exp_names = cfg["experiments"]["names"]
     var_names = cfg["variables"]
     boot      = get_bootstrap_settings(cfg)
+    pooled    = resolve_time_aggregation(cfg) == "pooled"
     cycles    = generate_cycles(cfg["time"]["start"], cfg["time"]["end"],
                                 cfg["time"]["interval_hours"])
 
@@ -374,6 +392,7 @@ def collect_lat_lon_slice_2d(cfg, stat_name, section_cfg):
         LatLonLev[exp_name] = {}
         for var_name in var_names:
             maps = []
+            pool = PoolBuilder(stat_name)
             lat = lon = None
             levs = None
 
@@ -393,7 +412,8 @@ def collect_lat_lon_slice_2d(cfg, stat_name, section_cfg):
 
                 with nc.Dataset(ncfile, "r") as ds:
                     try:
-                        field3d = read_nc_path(ds, path)
+                        comps = read_stat(ds, path)
+                        field3d = comps[0]
                         if not _has_expected_ndim(field3d, 3):
                             continue
                         if lat is None:
@@ -408,6 +428,8 @@ def collect_lat_lon_slice_2d(cfg, stat_name, section_cfg):
                         maps.append(_slice_3d_lat_lon_field(
                             field3d, selected_level_index, len(lat), len(lon)
                         ))
+                        pool.add(tuple(_slice_3d_lat_lon_field(c, selected_level_index, len(lat), len(lon))
+                                       for c in comps))
                     except Exception as e:
                         _maybe_print_missing(cfg, f"WARNING: missing/invalid {path} in {ncfile}: {e}")
 
@@ -416,12 +438,13 @@ def collect_lat_lon_slice_2d(cfg, stat_name, section_cfg):
                 continue
 
             samples = np.asarray(maps)
-            mean_data, ci_low, ci_high = bootstrap_mean_ci(
-                samples, n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"])
+            pool_arr = pool.build() if pooled else None
+            mean_data, ci_low, ci_high = aggregate(samples, pool_arr, boot)
 
             LatLonLev[exp_name][var_name] = {
                 "data": mean_data,
                 "samples": samples,
+                "pool": pool_arr,
                 "ci_low": ci_low,
                 "ci_high": ci_high,
                 "lat": lat,

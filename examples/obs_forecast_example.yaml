@@ -54,3 +54,13 @@ forecast:
   length: 24       # maximum lead hour
   interval: 6      # lead spacing
   start: 6         # first lead; set 0 to include the analysis time
+
+# How statistics are computed (docs/USER_GUIDE.md section 5). These are the
+# defaults; method: legacy reproduces pre-2026-11 results.
+statistics:
+  method: weighted
+  qc_pass_flags: [0, 19]    # 19 = JEDI background check, counted as passed
+  common_sample: true       # one matched observation sample for everything compared
+  spread_ddof: 1
+  spread_finite_ensemble_correction: true
+  time_aggregation: pooled

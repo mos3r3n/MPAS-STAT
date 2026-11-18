@@ -10,6 +10,7 @@ from .common import (
     generate_forecast_leads,
     lead_valid_time_allowed,
     resolve_latlon_bounds,
+    resolve_statistics_settings,
     resolve_time_settings,
 )
 from .reader import (
@@ -96,6 +97,8 @@ def auto_detect_latlon_bounds(config: Dict, diag_obs: str, bin_method: int,
     nmembers = config["experiments"]["n_member"]
 
     bounds: List[Optional[float]] = [None, None, None, None]
+    settings = resolve_statistics_settings(config)
+    reader_settings = None if settings["method"] == "legacy" else settings
 
     adjusted_start, end_time, interval = resolve_time_settings(
         config, diag_obs, for_forecast=(file_kind == "forecast"))
@@ -122,6 +125,7 @@ def auto_detect_latlon_bounds(config: Dict, diag_obs: str, bin_method: int,
                     filename = build_hofx_forecast_filename(hofx_dir, exp_name, init_time, lead, diag_obs)
                     omf_vec = load_observation_data(
                         filename, diag_obs, diag_var, bin_method, outerloop=0, nmember=nmember,
+                        settings=reader_settings,
                     )
                     _accumulate_valid_latlon_bounds(omf_vec, bounds)
     else:  # "cycling" -- OMB/OMA experiments (exp_type in "da"/"hofx")
@@ -135,6 +139,7 @@ def auto_detect_latlon_bounds(config: Dict, diag_obs: str, bin_method: int,
                 filedict = build_filename(base_dir, exp_name, exp_type, nmember, cycle_time, diag_obs)
                 omb_vec = load_observation_data(
                     filedict["bak"], diag_obs, diag_var, bin_method, outerloop=0, nmember=nmember,
+                    settings=reader_settings,
                 )
                 _accumulate_valid_latlon_bounds(omb_vec, bounds)
 

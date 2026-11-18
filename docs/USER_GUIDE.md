@@ -91,6 +91,13 @@ writing to `.../VerifyModel/<init_cycle>/f<HHH>/mpasstat.<valid_date>.nc`.
 | `regions` | Named latitude-band regions (`Global`, `Tropics`, `NHem`, ...) statistics are averaged over |
 | `regional` | `true` limits the lat/lon binning box to the mesh's own extent instead of the full globe |
 | `n_processes` | Thread-pool width for the statistic tasks |
+| `statistics_method` | `weighted` (default) or `legacy` — see §5 |
+| `area_weighting`, `mass_weighting` | Weight cells by `areaCell` and model levels by layer pressure thickness (default `true`; `weighted` method only) — §5.1 |
+| `spread_ddof`, `spread_finite_ensemble_correction` | Ensemble spread definition (default `1`, `true`) — §5.3 |
+| `height_reference` | `msl` (default) or `agl`: whether `hgt_levels` are above sea level or above the model terrain |
+
+Variable names: `T` is temperature, `TH` potential temperature, `Tv` virtual
+temperature (before 2026-11, `Tv` mistakenly returned potential temperature).
 
 ### 1.4 `graphic.yaml` (graphics stage) — key fields
 
@@ -103,6 +110,7 @@ writing to `.../VerifyModel/<init_cycle>/f<HHH>/mpasstat.<valid_date>.nc`.
 | `region` | Which of `input.yaml`'s `regions` to plot (one region per run) |
 | `plot_types` | Which figures to generate — see §1.5 |
 | `forecast.*`, `scorecard.*`, `level_slices` | Extended-forecast / scorecard / 2-D-slice-specific settings |
+| `time_aggregation` | How cycles are combined: `pooled` (default) or `mean` — §5.2 |
 
 ### 1.5 Available `plot_types` (model-space)
 
@@ -143,7 +151,10 @@ One file per experiment × cycle:
 ```
 
 `spread` only appears when `n_member > 1`. `region` names come from
-`input.yaml`'s `regions` map.
+`input.yaml`'s `regions` map. With `statistics_method: weighted` (the
+default) every group also holds `weight`, the total sample weight behind
+its statistics (area × layer mass, summed over valid samples), which the
+graphics stage uses to pool cycles (§5.2).
 
 ---
 
@@ -552,6 +563,22 @@ new obs type; nothing else in the pipeline needs to change. See that file's
 | `cycle_interval_hours` | Override the config-wide `time_settings.interval` for sensors with their own cadence (e.g. sondes: 12-hourly regardless of the model DA cycle length) |
 | `cycle_valid_hours` | Restrict this sensor's cycles to ONLY these UTC hours, e.g. `[0, 12]` for sondes (radiosondes only launch at 00Z/12Z) — the configured start time is snapped forward to the next listed hour, so the generated cycle list can never include any other hour regardless of what `time_settings.start_time` happens to be. See the callout below. |
 | `cycle_start_trigger_hours`, `cycle_start_offset_hours` | Older, narrower alternative to `cycle_valid_hours`: shift the start time forward by a fixed offset, but only when the configured start hour is one of a specific listed set — kept for a sensor that wants a plain shift rather than "snap to nearest valid hour" |
+
+#### `statistics:` block (both stages)
+
+```yaml
+statistics:
+  method: weighted          # or "legacy" (pre-2026-11 behaviour, all settings below ignored)
+  qc_pass_flags: [0, 19]    # EffectiveQC values counted as passed (19 = JEDI background check)
+  common_sample: true       # one matched observation sample for OMB/OMA/OMF and all experiments
+  spread_ddof: 1
+  spread_finite_ensemble_correction: true
+  time_aggregation: pooled  # or "mean"
+```
+
+See §5 for what each setting does. Domain boxes (`domains`, and
+`plot_settings.latlon_domain`) may cross the dateline: write them as
+`[lat_min, lat_max, 170, -170]` or `[lat_min, lat_max, 170, 190]`.
 
 ### 2.4 Available statistics (observation-space)
 
@@ -1033,3 +1060,93 @@ obs-space output be archived, rsynced, or deleted as one unit.
 > only). Either re-run `src/mpas_stat/obs/diag.py` to regenerate files under
 > the current layout (cheap -- it's a read-IODA/write-netCDF pass, not a DA
 > re-run), or move the existing files by hand.
+
+## 5. Statistical methods
+
+Since 2026-11 both pipelines compute and aggregate statistics as described
+below. Every change can be switched off to reproduce older results:
+`statistics_method: legacy` (model statistics), `time_aggregation: mean`
+(model graphics) and `statistics: {method: legacy}` (obs config) together
+reproduce the pre-2026-11 output exactly.
+
+### 5.1 Model space: weighted, pooled statistics
+
+Each product pools **all samples** that fall into one output cell — grid
+cells of a region, latitude band or lat-lon box and, for products spanning
+several model levels, every level in the column or level bin — into one
+weighted mean, RMS and STD:
+
+- **Area weights.** Cells are weighted by `areaCell`, so the refined part
+  of a variable-resolution or regional mesh does not dominate.
+- **Mass weights.** When model levels are pooled (0-D regions, latitude-bin
+  profile, 2-D lat-lon, level-bin products), each level is weighted by its
+  layer pressure thickness, from the reference (init) pressure.
+- **Squares before square roots.** The 2-D lat-lon RMS of a 3-D variable
+  is the RMS over the column, and level-bin products pool every level in
+  the bin. (Before 2026-11 the signed error was averaged over the column or
+  bin first, so errors of opposite sign cancelled and the "RMS" mostly
+  reflected the column-mean bias.)
+- Per-level products (vertical, height and pressure profiles; lat-hgt,
+  lat-pres and their 3-D counterparts) use area weights only.
+- Every product also stores its total `weight`, used for pooling over cycles.
+
+### 5.2 Pooling over cycles (`time_aggregation: pooled`)
+
+Figures that summarize many cycles pool the per-cycle statistics with their
+weights (model: `weight`; obs: `Count`), which gives the statistic of all
+samples of all cycles taken together:
+
+- mean = Σ w·mean / Σ w
+- RMS = √(Σ w·RMS² / Σ w)
+- STD = √(Σ w·(STD² + mean²) / Σ w − mean²)
+- spread = √(Σ w·spread² / Σ w)
+
+`Count` and other statistics keep the plain mean over cycles. Bootstrap
+confidence intervals resample whole cycles and re-pool. `mean` restores the
+plain average of per-cycle statistics, in which a cycle with 5 observations
+counts as much as one with 5,000.
+
+### 5.3 Ensemble spread
+
+Per grid point or observation, spread is the ensemble standard deviation
+with `spread_ddof` (1 = unbiased variance) times √((N+1)/N) when
+`spread_finite_ensemble_correction` is on, so that for a reliable N-member
+ensemble it matches the RMSE of the ensemble mean (Fortin et al. 2014).
+Spread is aggregated as √(mean variance), not as the mean standard
+deviation (which is smaller, making ensembles look under-dispersive).
+
+The model-space reference (the external analysis in `init_file`) has its own
+error, which is not included: a reliable ensemble will look somewhat
+under-dispersive against it. Observation-space `TotalSpread` does include
+the observation error.
+
+### 5.4 Observation space: QC and one common sample
+
+- **QC flags.** `qc_pass_flags` (default `[0, 19]`) applies to every
+  innovation source alike. Flag 19 is JEDI's background check, so that
+  check does not shape the verified sample. (Before 2026-11, 19 counted as
+  passed only for HofX-derived innovations.)
+- **Common sample.** With `common_sample: true`, for each cycle (or init
+  cycle and lead) and variable, every OMB, OMA and OMF vector being compared
+  — OMB and OMA of each experiment, and all experiments — keeps only the
+  observations valid (QC passed, finite innovation) in **all** of them.
+  Observations are matched by latitude, longitude, pressure or height and
+  `dateTime`, not by file order. Otherwise an "OMA improves on OMB" or
+  "experiment B beats A" result partly reflects which observations each one
+  rejected.
+- **GNSS-RO.** Bending angle, like refractivity, uses the HofX group directly
+  as the innovation (before 2026-11 a misspelling sent it through
+  ObsValue − HofX).
+
+### 5.5 Interpreting results
+
+- **Significance.** Bootstrap intervals resample cycles as independent.
+  Consecutive cycles are correlated, so the intervals are somewhat too narrow
+  and significance markers appear more often than their nominal rate; many
+  cells are also tested at once. Treat isolated significant cells with
+  caution.
+- **Model-space reference.** Model-space statistics verify against an
+  external analysis, which is not independent truth: it favours experiments
+  that resemble it, especially at short lead times. Prefer observation-space
+  results for analysis-time and early-lead conclusions.
+

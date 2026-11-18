@@ -129,7 +129,8 @@ def _hofx_fill_mask(hofx_arr: np.ndarray, fill_threshold: float = 1.0e30) -> np.
     return ~np.isfinite(arr) | (np.abs(arr) >= fill_threshold)
 
 
-def _apply_hofx_qc(qc: Optional[np.ndarray], hofx_arr: np.ndarray) -> np.ndarray:
+def _apply_hofx_qc(qc: Optional[np.ndarray], hofx_arr: np.ndarray,
+                   remap_background_check: bool = True) -> np.ndarray:
     """Finalize the QC mask for a HofX-DERIVED innovation (the branch taken
     whenever `hofx_used is not None` in load_observation_data() -- i.e. the
     'hofx'/'hofx0'/'hofx0_mean'/'hofx<outerloop>' fallback, never the
@@ -155,8 +156,18 @@ def _apply_hofx_qc(qc: Optional[np.ndarray], hofx_arr: np.ndarray) -> np.ndarray
     """
     missing = _hofx_fill_mask(hofx_arr)
     base = np.zeros(missing.shape, dtype=np.float64) if qc is None else np.asarray(qc, dtype=np.float64)
-    base = np.where(base == 19, 0.0, base)
+    if remap_background_check:
+        base = np.where(base == 19, 0.0, base)
     return np.where(missing, np.nan, base)
+
+
+def _pass_flags_to_zero(qc: Optional[np.ndarray], pass_flags) -> Optional[np.ndarray]:
+    """Map every QC flag in `pass_flags` to 0 (the pipeline's single
+    "passed" value); other flags are kept as-is (rejected)."""
+    if qc is None or pass_flags is None:
+        return qc
+    qc = np.asarray(qc)
+    return np.where(np.isin(qc, list(pass_flags)), 0, qc)
 
 
 def _read_obs_type(f, diag_var: Union[str, int]) -> np.ndarray:
@@ -176,14 +187,30 @@ def _read_obs_type(f, diag_var: Union[str, int]) -> np.ndarray:
 
 # Variables whose HofX group already holds the innovation itself (O-B in
 # percent for GNSS-RO), so it is used as-is instead of ObsValue - HofX.
-# NOTE: "beningAngle" is kept exactly as historically spelled; the sensor
-# registry names the GNSS-RO bending-angle variable "bendingAngle", so that
-# variable currently takes the ObsValue - HofX path.
-_HOFX_IS_INNOVATION = ["atmosphericRefractivity", "beningAngle"]
+# (Before 2026-11 this list misspelled "bendingAngle", so bending angle
+# silently took the ObsValue - HofX path.)
+_HOFX_IS_INNOVATION = ["atmosphericRefractivity", "bendingAngle"]
+
+
+def _ensemble_spread(members: np.ndarray, ddof: int, finite_correction: bool) -> np.ndarray:
+    """Per-observation ensemble spread over axis 0 (NaN members ignored):
+    sqrt of the variance with ``ddof``, times (N+1)/N when
+    ``finite_correction`` (N = valid members at that observation)."""
+    if not ddof and not finite_correction:
+        return np.nanstd(members, axis=0, ddof=0)
+    n = np.sum(np.isfinite(members), axis=0).astype(np.float64)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = np.nanmean(members, axis=0)
+        var = np.nansum((members - mean) ** 2, axis=0)
+        var = np.where(n > ddof, var / (n - ddof), np.nan)
+        if finite_correction:
+            var = var * (n + 1.0) / n
+    return np.sqrt(var)
 
 
 def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int],
-                        bin_method: int, outerloop: int, nmember: int):
+                        bin_method: int, outerloop: int, nmember: int,
+                        settings: Optional[Dict] = None):
     """Load observation data from HDF5 file for OMB and OMA respectively.
 
     Radiances (bin_method == 3) read channel ``diag_var`` (1-based) of each
@@ -212,15 +239,27 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
     it is the identical risk. Precomputed 'ombg'/'oman' innovations are
     NOT touched here -- those come from the DA system's own QC'd output.
 
-    Returns a dict (lat, lon, hgt, pres, innov, qc, spread, totSpread), or
-    None if the file cannot be read.
+    ``settings`` (from mpas_stat.obs.common.resolve_statistics_settings)
+    selects the QC flags that count as passed (qc_pass_flags, applied to
+    every innovation source alike) and the ensemble-spread definition
+    (spread_ddof, spread_finite_ensemble_correction). None, or the legacy
+    settings, keeps the pre-2026-11 behaviour: flag 0 passes, and flag 19
+    additionally passes only for HofX-derived innovations; spread uses ddof 0.
+
+    Returns a dict (lat, lon, hgt, pres, time, innov, qc, spread, totSpread),
+    or None if the file cannot be read. ``time`` is MetaData/dateTime when
+    present (used to match observations across files), else None.
     """
+    pass_flags = settings.get("qc_pass_flags") if settings else None
+    spread_ddof = int(settings.get("spread_ddof", 0)) if settings else 0
+    spread_correction = bool(settings.get("spread_finite_ensemble_correction", False)) if settings else False
 
     obs_vector = {
         'lat': None,
         'lon': None,
         'hgt': None,
         'pres': None,
+        'time': None,
         'innov': None,
         'qc': None,
         'spread': None,
@@ -244,6 +283,7 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
             obs_vector['lat']  = f['MetaData']['latitude'][:]
             obs_vector['lon']  = f['MetaData']['longitude'][:]
             obs_vector['lon']  = np.where(obs_vector['lon'] > 180., obs_vector['lon']-360., obs_vector['lon'])
+            obs_vector['time'] = f['MetaData']['dateTime'][:] if 'dateTime' in f['MetaData'] else None
 
             # --------------------------------------------------
             # Innovation: precomputed ombg/oman, else ObsValue - HofX
@@ -284,8 +324,10 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
             # above did or did not already flag -- most relevant for OMF
             # (process_forecast_experiment), whose plain HofX files often
             # have no EffectiveQC group at all.
+            obs_vector['qc'] = _pass_flags_to_zero(obs_vector['qc'], pass_flags)
             if hofx_used is not None:
-                obs_vector['qc'] = _apply_hofx_qc(obs_vector['qc'], hofx_used)
+                obs_vector['qc'] = _apply_hofx_qc(obs_vector['qc'], hofx_used,
+                                                  remap_background_check=pass_flags is None)
 
             # --------------------------------------------------
             # Ensemble spread -- missing members (see _hofx_fill_mask) are
@@ -297,7 +339,7 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
                     hofx = read(f'hofx0_{iens+1}')
                     hofx_ens.append(np.where(_hofx_fill_mask(hofx), np.nan, hofx))
                 hofx_ens = np.stack(hofx_ens, axis=0)
-                obs_vector['spread'] = np.nanstd(hofx_ens, axis=0, ddof=0)
+                obs_vector['spread'] = _ensemble_spread(hofx_ens, spread_ddof, spread_correction)
                 # total spread
                 obserr = read('ObsError')
                 obs_vector['totSpread'] = np.sqrt(np.nan_to_num(obs_vector['spread'], nan=0.)**2+

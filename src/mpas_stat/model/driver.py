@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Tuple, Any, Optional
 
@@ -11,11 +12,17 @@ import numpy as np
 from .variables import extract_mpas_variables, extract_mpas_variables_list
 from .config import MPASConfig
 from .kernels import (
+    calculate_statistics_one_task_weighted,
     prepare_one_variable_for_stats,
     calculate_statistics_one_task,
     build_task_list,
 )
 from .interp import build_shared_interp_coeffs, configure_numba_threads
+
+
+# Serializes netCDF/HDF5 access from worker threads (the C libraries are not
+# thread-safe).
+_NETCDF_LOCK = threading.Lock()
 
 
 def setup_logger(config: MPASConfig) -> logging.Logger:
@@ -50,6 +57,13 @@ def prepare_bin_metadata(config: MPASConfig) -> Dict[str, Any]:
         lon = np.degrees(init.variables['lonCell'][:]).astype(np.float64)
         lon = (lon + 180.0) % 360.0 - 180.0
         nVertLevels = init.dimensions['nVertLevels'].size
+        # Horizontal weights for statistics_method "weighted": MPAS cell
+        # areas (normalized to mean 1), or equal weights if unavailable.
+        if getattr(config, "area_weighting", False) and 'areaCell' in init.variables:
+            area = np.asarray(init.variables['areaCell'][:], dtype=np.float64)
+            cell_weight = area / np.nanmean(area)
+        else:
+            cell_weight = np.ones(lat.shape, dtype=np.float64)
 
     if config.regional:
         lat_min, lat_max = lat.min(), lat.max()
@@ -112,6 +126,7 @@ def prepare_bin_metadata(config: MPASConfig) -> Dict[str, Any]:
     return {
         "lat": lat,
         "lon": lon,
+        "cell_weight": cell_weight,
         "nVertLevels": nVertLevels,
         "lat_bins": lat_bins,
         "lon_bins": lon_bins,
@@ -142,7 +157,19 @@ def _update_accumulator(accum: Dict[str, np.ndarray], arr: np.ndarray):
     accum["count"] += valid.astype(np.int32, copy=False)
 
 
-def _finalize_accumulator(accum: Dict[str, np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
+def _finalize_accumulator(
+    accum: Dict[str, np.ndarray],
+    ddof: int = 0,
+    finite_ensemble_correction: bool = False,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Ensemble mean and spread per grid point.
+
+    Spread is sqrt(variance) with ``ddof`` (1 = unbiased sample variance) and,
+    when ``finite_ensemble_correction`` is set, the (N+1)/N factor that makes
+    the spread of an N-member ensemble directly comparable with the RMSE of
+    its mean (Fortin et al. 2014). Points with fewer than ddof+1 valid
+    members get NaN spread.
+    """
     sum_arr = accum["sum"]
     sumsq_arr = accum["sumsq"]
     count_arr = accum["count"]
@@ -156,6 +183,14 @@ def _finalize_accumulator(accum: Dict[str, np.ndarray]) -> Tuple[np.ndarray, np.
     var_arr = np.full_like(sum_arr, np.nan, dtype=np.float64)
     var_arr[valid_count] = sumsq_arr[valid_count] / count_arr[valid_count] - mean_arr[valid_count] ** 2
     var_arr[valid_count] = np.maximum(var_arr[valid_count], 0.0)
+    if ddof or finite_ensemble_correction:
+        n = count_arr.astype(np.float64)
+        factor = np.full_like(sum_arr, np.nan, dtype=np.float64)
+        ok = n > ddof
+        factor[ok] = n[ok] / (n[ok] - ddof)
+        if finite_ensemble_correction:
+            factor[ok] *= (n[ok] + 1.0) / n[ok]
+        var_arr = var_arr * factor
     sprd_arr[valid_count] = np.sqrt(var_arr[valid_count])
 
     return mean_arr, sprd_arr
@@ -171,6 +206,10 @@ def prepare_vertical_support_fields(
     If variable_cache is provided and contains P, reuse it to avoid rereading.
     """
     init_z = np.asarray(extract_mpas_variables(config.init_file, 'Z'), dtype=np.float64)
+    if getattr(config, "height_reference", "msl") == "agl":
+        # Height above the model terrain (lowest zgrid interface).
+        init_z = init_z - np.asarray(extract_mpas_variables(config.init_file, 'zgrid'),
+                                     dtype=np.float64)[:, :1]
 
     if variable_cache is not None and "P" in variable_cache:
         init_p = np.asarray(variable_cache["P"]["init"], dtype=np.float64) / 100.0
@@ -236,7 +275,12 @@ def _read_one_member_fields(imem: int, forecast_template: str, vars_needed: list
     Kept as a top-level helper so it can be used safely by executors.
     """
     fcst_file = forecast_template.format(imem)
-    member_data = extract_mpas_variables_list(fcst_file, vars_needed)
+    # netCDF-C/HDF5 are not thread-safe (netCDF4-python releases the GIL
+    # during I/O), so concurrent reads from the I/O thread pool can corrupt
+    # memory or segfault. Serialize the file access; the per-member float64
+    # conversion and accumulation still overlap across threads.
+    with _NETCDF_LOCK:
+        member_data = extract_mpas_variables_list(fcst_file, vars_needed)
     return imem, fcst_file, {
         var_name: np.asarray(member_data[var_name], dtype=np.float64)
         for var_name in vars_needed
@@ -319,7 +363,14 @@ def prepare_all_variable_fields_ensemble(
                 update_from_member(member_data)
 
     for var_name in vars_needed:
-        fcst_mean, fcst_sprd = _finalize_accumulator(accumulators[var_name])
+        if config.statistics_method == "legacy":
+            fcst_mean, fcst_sprd = _finalize_accumulator(accumulators[var_name])
+        else:
+            fcst_mean, fcst_sprd = _finalize_accumulator(
+                accumulators[var_name],
+                ddof=config.spread_ddof,
+                finite_ensemble_correction=config.spread_finite_ensemble_correction,
+            )
         variable_cache[var_name] = {
             "init": np.asarray(init_data[var_name], dtype=np.float64),
             "fcst_mean": fcst_mean,
@@ -427,8 +478,11 @@ def calculate_statistics_all_tasks(
             if variable_submit_time[var_name] is None:
                 variable_submit_time[var_name] = t0
 
+            task_func = (calculate_statistics_one_task
+                         if config.statistics_method == "legacy"
+                         else calculate_statistics_one_task_weighted)
             future = executor.submit(
-                calculate_statistics_one_task,
+                task_func,
                 var_name,
                 task_name,
                 prepared_cache[var_name],
@@ -465,6 +519,23 @@ def calculate_statistics_all_tasks(
     return final_results
 
 
+def layer_mass_weights(init_p_hpa: np.ndarray, config: MPASConfig) -> np.ndarray:
+    """Vertical weights for pooling across model levels: the pressure
+    thickness of each layer (proportional to its air mass), from the
+    reference (init) mid-level pressure. Interface pressures are midpoints
+    between levels, extrapolated half a layer at the bottom and top (top
+    clipped at 0). Equal weights when mass_weighting is off."""
+    p = np.asarray(init_p_hpa, dtype=np.float64)
+    if not getattr(config, "mass_weighting", False) or p.ndim != 2 or p.shape[1] < 2:
+        return np.ones(p.shape, dtype=np.float64)
+    half = np.empty((p.shape[0], p.shape[1] + 1), dtype=np.float64)
+    half[:, 1:-1] = 0.5 * (p[:, :-1] + p[:, 1:])
+    half[:, 0] = p[:, 0] + 0.5 * (p[:, 0] - p[:, 1])
+    half[:, -1] = np.maximum(p[:, -1] - 0.5 * (p[:, -2] - p[:, -1]), 0.0)
+    dp = np.abs(half[:, :-1] - half[:, 1:])
+    return dp / np.nanmean(dp)
+
+
 def calculate_statistics(config: MPASConfig):
     """Main driver for all statistics."""
     start_time = time.time()
@@ -488,6 +559,8 @@ def calculate_statistics(config: MPASConfig):
         logger=logger,
     )
     logger.info("All variables preprocessed for statistics")
+
+    meta["level_weight"] = layer_mass_weights(support["init_p"], config)
 
     final_results = calculate_statistics_all_tasks(
         prepared_cache=prepared_cache,
