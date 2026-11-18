@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Dict, Tuple, Any, Optional
 
+from ..core.grouping import grouped_stats_1d
 from .interp import (
     apply_interp_by_level,
 )
@@ -18,43 +19,6 @@ def make_stat_dict(shape, include_spread: bool) -> Dict[str, np.ndarray]:
     if include_spread:
         stats["spread"] = np.full(shape, np.nan, dtype=np.float64)
     return stats
-
-
-def grouped_stats_1d(values: np.ndarray, group_ids: np.ndarray, n_groups: int):
-    """
-    Compute mean, rms, std for 1D values grouped by integer group_ids.
-    NaNs are ignored.
-    """
-    valid = np.isfinite(values)
-    if not np.any(valid):
-        shape = (n_groups,)
-        return (
-            np.full(shape, np.nan, dtype=np.float64),
-            np.full(shape, np.nan, dtype=np.float64),
-            np.full(shape, np.nan, dtype=np.float64),
-        )
-
-    gids = group_ids[valid]
-    vals = values[valid]
-
-    count = np.bincount(gids, minlength=n_groups).astype(np.float64)
-    s1 = np.bincount(gids, weights=vals, minlength=n_groups).astype(np.float64)
-    s2 = np.bincount(gids, weights=vals * vals, minlength=n_groups).astype(np.float64)
-
-    mean = np.full(n_groups, np.nan, dtype=np.float64)
-    rms = np.full(n_groups, np.nan, dtype=np.float64)
-    std = np.full(n_groups, np.nan, dtype=np.float64)
-
-    nonzero = count > 0
-    mean[nonzero] = s1[nonzero] / count[nonzero]
-    rms[nonzero] = np.sqrt(s2[nonzero] / count[nonzero])
-
-    var = np.full(n_groups, np.nan, dtype=np.float64)
-    var[nonzero] = s2[nonzero] / count[nonzero] - mean[nonzero] ** 2
-    var[nonzero] = np.maximum(var[nonzero], 0.0)
-    std[nonzero] = np.sqrt(var[nonzero])
-
-    return mean, rms, std
 
 
 def prepare_one_variable_for_stats(
@@ -124,6 +88,75 @@ def prepare_one_variable_for_stats(
     }
 
 
+def _region_subset(
+    diff: np.ndarray,
+    spread: Optional[np.ndarray],
+    lat: np.ndarray,
+    region_name: str,
+    lat_min_r: float,
+    lat_max_r: float,
+) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+    """Rows (cells) of diff/spread inside one latitude region; "global" is all rows."""
+    if region_name.lower() == "global":
+        return diff, spread
+    region_mask = (lat >= lat_min_r) & (lat < lat_max_r)
+    return diff[region_mask, :], (spread[region_mask, :] if spread is not None else None)
+
+
+def _regional_column_profiles(
+    diff: np.ndarray,
+    spread: Optional[np.ndarray],
+    lat: np.ndarray,
+    nlev: int,
+    regions: Dict[str, Tuple[float, float]],
+    key_prefix: str,
+) -> Dict[str, Dict[str, np.ndarray]]:
+    """Per-region mean/rms/std (and spread) of every column of a
+    (nCells, nlev) field -- model levels, or values already interpolated to
+    height or pressure levels. Keys are f"{key_prefix}_{region_name}"."""
+    results = {}
+
+    for region_name, (lat_min_r, lat_max_r) in regions.items():
+        diff_region, sprd_region = _region_subset(diff, spread, lat, region_name, lat_min_r, lat_max_r)
+
+        stats = make_stat_dict((nlev,), spread is not None)
+        stats["mean"] = np.nanmean(diff_region, axis=0)
+        stats["rms"] = np.sqrt(np.nanmean(diff_region**2, axis=0))
+        stats["std"] = np.nanstd(diff_region, axis=0)
+        if sprd_region is not None:
+            stats["spread"] = np.nanmean(sprd_region, axis=0)
+
+        results[f"{key_prefix}_{region_name}"] = stats
+
+    return results
+
+
+def _grouped_column_stats(
+    diff: np.ndarray,
+    spread: Optional[np.ndarray],
+    group_ids: np.ndarray,
+    group_shape: Tuple[int, ...],
+    nlev: int,
+) -> Dict[str, np.ndarray]:
+    """Grouped (lat bins, or lat-lon boxes) mean/rms/std (and spread) of each
+    column k of a (nCells, nlev) field. Output arrays are group_shape + (nlev,)."""
+    ngroups = int(np.prod(group_shape))
+    stats = make_stat_dict(tuple(group_shape) + (nlev,), spread is not None)
+
+    for k in range(nlev):
+        mean, rms, std = grouped_stats_1d(diff[:, k], group_ids, ngroups)
+
+        stats["mean"][..., k] = mean.reshape(group_shape)
+        stats["rms"][..., k] = rms.reshape(group_shape)
+        stats["std"][..., k] = std.reshape(group_shape)
+
+        if spread is not None:
+            sprd_mean, _, _ = grouped_stats_1d(spread[:, k], group_ids, ngroups)
+            stats["spread"][..., k] = sprd_mean.reshape(group_shape)
+
+    return stats
+
+
 def compute_0d_regions(
     diff: np.ndarray,
     spread: Optional[np.ndarray],
@@ -190,28 +223,7 @@ def compute_1d_vert_profile(
     lat: np.ndarray,
     regions: Dict[str, Tuple[float, float]],
 ) -> Dict[str, Dict[str, np.ndarray]]:
-    nVertLevels = diff.shape[1]
-    results = {}
-
-    for region_name, (lat_min_r, lat_max_r) in regions.items():
-        if region_name.lower() == "global":
-            diff_region = diff
-            sprd_region = spread
-        else:
-            region_mask = (lat >= lat_min_r) & (lat < lat_max_r)
-            diff_region = diff[region_mask, :]
-            sprd_region = spread[region_mask, :] if spread is not None else None
-
-        stats = make_stat_dict((nVertLevels,), spread is not None)
-        stats["mean"] = np.nanmean(diff_region, axis=0)
-        stats["rms"] = np.sqrt(np.nanmean(diff_region**2, axis=0))
-        stats["std"] = np.nanstd(diff_region, axis=0)
-        if sprd_region is not None:
-            stats["spread"] = np.nanmean(sprd_region, axis=0)
-
-        results[f"vert_profile_{region_name}"] = stats
-
-    return results
+    return _regional_column_profiles(diff, spread, lat, diff.shape[1], regions, "vert_profile")
 
 
 def compute_1d_vert_bin_profile(
@@ -225,13 +237,7 @@ def compute_1d_vert_bin_profile(
     results = {}
 
     for region_name, (lat_min_r, lat_max_r) in regions.items():
-        if region_name.lower() == "global":
-            diff_region = diff
-            sprd_region = spread
-        else:
-            region_mask = (lat >= lat_min_r) & (lat < lat_max_r)
-            diff_region = diff[region_mask, :]
-            sprd_region = spread[region_mask, :] if spread is not None else None
+        diff_region, sprd_region = _region_subset(diff, spread, lat, region_name, lat_min_r, lat_max_r)
 
         stats = make_stat_dict((nLevelBins,), spread is not None)
 
@@ -258,27 +264,7 @@ def compute_1d_vert_hgt_profile(
     hgt_levels: np.ndarray,
     regions: Dict[str, Tuple[float, float]],
 ) -> Dict[str, Dict[str, np.ndarray]]:
-    results = {}
-
-    for region_name, (lat_min_r, lat_max_r) in regions.items():
-        if region_name.lower() == "global":
-            diff_region = diff_hgt
-            sprd_region = sprd_hgt
-        else:
-            region_mask = (lat >= lat_min_r) & (lat < lat_max_r)
-            diff_region = diff_hgt[region_mask, :]
-            sprd_region = sprd_hgt[region_mask, :] if sprd_hgt is not None else None
-
-        stats = make_stat_dict((len(hgt_levels),), sprd_hgt is not None)
-        stats["mean"] = np.nanmean(diff_region, axis=0)
-        stats["rms"] = np.sqrt(np.nanmean(diff_region**2, axis=0))
-        stats["std"] = np.nanstd(diff_region, axis=0)
-        if sprd_region is not None:
-            stats["spread"] = np.nanmean(sprd_region, axis=0)
-
-        results[f"vert_hgt_profile_{region_name}"] = stats
-
-    return results
+    return _regional_column_profiles(diff_hgt, sprd_hgt, lat, len(hgt_levels), regions, "vert_hgt_profile")
 
 
 def compute_1d_vert_pres_profile(
@@ -288,27 +274,7 @@ def compute_1d_vert_pres_profile(
     pres_levels: np.ndarray,
     regions: Dict[str, Tuple[float, float]],
 ) -> Dict[str, Dict[str, np.ndarray]]:
-    results = {}
-
-    for region_name, (lat_min_r, lat_max_r) in regions.items():
-        if region_name.lower() == "global":
-            diff_region = diff_pres
-            sprd_region = sprd_pres
-        else:
-            region_mask = (lat >= lat_min_r) & (lat < lat_max_r)
-            diff_region = diff_pres[region_mask, :]
-            sprd_region = sprd_pres[region_mask, :] if sprd_pres is not None else None
-
-        stats = make_stat_dict((len(pres_levels),), sprd_pres is not None)
-        stats["mean"] = np.nanmean(diff_region, axis=0)
-        stats["rms"] = np.sqrt(np.nanmean(diff_region**2, axis=0))
-        stats["std"] = np.nanstd(diff_region, axis=0)
-        if sprd_region is not None:
-            stats["spread"] = np.nanmean(sprd_region, axis=0)
-
-        results[f"vert_pres_profile_{region_name}"] = stats
-
-    return results
+    return _regional_column_profiles(diff_pres, sprd_pres, lat, len(pres_levels), regions, "vert_pres_profile")
 
 
 def compute_2d_lat_lon(
@@ -376,24 +342,7 @@ def compute_2d_lat_hgt(
     lat_bins: np.ndarray,
     hgt_levels: np.ndarray,
 ) -> Dict[str, np.ndarray]:
-    nlat = len(lat_bins) - 1
-
-    stats = make_stat_dict((nlat, len(hgt_levels)), sprd_hgt is not None)
-
-    for k in range(len(hgt_levels)):
-        diff_k = diff_hgt[:, k]
-        mean, rms, std = grouped_stats_1d(diff_k, lat_idx, nlat)
-
-        stats["mean"][:, k] = mean
-        stats["rms"][:, k] = rms
-        stats["std"][:, k] = std
-
-        if sprd_hgt is not None:
-            sprd_k = sprd_hgt[:, k]
-            sprd_mean, _, _ = grouped_stats_1d(sprd_k, lat_idx, nlat)
-            stats["spread"][:, k] = sprd_mean
-
-    return stats
+    return _grouped_column_stats(diff_hgt, sprd_hgt, lat_idx, (len(lat_bins) - 1,), len(hgt_levels))
 
 
 def compute_2d_lat_pres(
@@ -403,24 +352,7 @@ def compute_2d_lat_pres(
     lat_bins: np.ndarray,
     pres_levels: np.ndarray,
 ) -> Dict[str, np.ndarray]:
-    nlat = len(lat_bins) - 1
-
-    stats = make_stat_dict((nlat, len(pres_levels)), sprd_pres is not None)
-
-    for k in range(len(pres_levels)):
-        diff_k = diff_pres[:, k]
-        mean, rms, std = grouped_stats_1d(diff_k, lat_idx, nlat)
-
-        stats["mean"][:, k] = mean
-        stats["rms"][:, k] = rms
-        stats["std"][:, k] = std
-
-        if sprd_pres is not None:
-            sprd_k = sprd_pres[:, k]
-            sprd_mean, _, _ = grouped_stats_1d(sprd_k, lat_idx, nlat)
-            stats["spread"][:, k] = sprd_mean
-
-    return stats
+    return _grouped_column_stats(diff_pres, sprd_pres, lat_idx, (len(lat_bins) - 1,), len(pres_levels))
 
 
 def compute_3d_lat_lon_lev(
@@ -468,26 +400,8 @@ def compute_3d_lat_lon_hgt(
     lon_bins: np.ndarray,
     hgt_levels: np.ndarray,
 ) -> Dict[str, np.ndarray]:
-    nlat = len(lat_bins) - 1
-    nlon = len(lon_bins) - 1
-    ngroups = nlat * nlon
-
-    stats = make_stat_dict((nlat, nlon, len(hgt_levels)), sprd_hgt is not None)
-
-    for k in range(len(hgt_levels)):
-        diff_k = diff_hgt[:, k]
-        mean, rms, std = grouped_stats_1d(diff_k, group_ids_latlon, ngroups)
-
-        stats["mean"][:, :, k] = mean.reshape(nlat, nlon)
-        stats["rms"][:, :, k] = rms.reshape(nlat, nlon)
-        stats["std"][:, :, k] = std.reshape(nlat, nlon)
-
-        if sprd_hgt is not None:
-            sprd_k = sprd_hgt[:, k]
-            sprd_mean, _, _ = grouped_stats_1d(sprd_k, group_ids_latlon, ngroups)
-            stats["spread"][:, :, k] = sprd_mean.reshape(nlat, nlon)
-
-    return stats
+    return _grouped_column_stats(diff_hgt, sprd_hgt, group_ids_latlon,
+                                 (len(lat_bins) - 1, len(lon_bins) - 1), len(hgt_levels))
 
 
 def compute_3d_lat_lon_pres(
@@ -498,26 +412,8 @@ def compute_3d_lat_lon_pres(
     lon_bins: np.ndarray,
     pres_levels: np.ndarray,
 ) -> Dict[str, np.ndarray]:
-    nlat = len(lat_bins) - 1
-    nlon = len(lon_bins) - 1
-    ngroups = nlat * nlon
-
-    stats = make_stat_dict((nlat, nlon, len(pres_levels)), sprd_pres is not None)
-
-    for k in range(len(pres_levels)):
-        diff_k = diff_pres[:, k]
-        mean, rms, std = grouped_stats_1d(diff_k, group_ids_latlon, ngroups)
-
-        stats["mean"][:, :, k] = mean.reshape(nlat, nlon)
-        stats["rms"][:, :, k] = rms.reshape(nlat, nlon)
-        stats["std"][:, :, k] = std.reshape(nlat, nlon)
-
-        if sprd_pres is not None:
-            sprd_k = sprd_pres[:, k]
-            sprd_mean, _, _ = grouped_stats_1d(sprd_k, group_ids_latlon, ngroups)
-            stats["spread"][:, :, k] = sprd_mean.reshape(nlat, nlon)
-
-    return stats
+    return _grouped_column_stats(diff_pres, sprd_pres, group_ids_latlon,
+                                 (len(lat_bins) - 1, len(lon_bins) - 1), len(pres_levels))
 
 
 def calculate_statistics_one_task(

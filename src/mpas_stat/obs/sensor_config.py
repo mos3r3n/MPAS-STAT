@@ -94,7 +94,7 @@ OBSERVATION_CONFIGS: Dict[str, ObservationConfig] = {
     # ---------------- Conventional observations ----------------
     "sondes": ObservationConfig(
         variables=['windNorthward', 'windEastward', 'airTemperature', 'specificHumidity'],
-        units=['$\mathrm{m \cdot s^{-1}}$', '$\mathrm{m \cdot s^{-1}}$', '$\mathrm{K}$', '$\mathrm{g \cdot kg^{-1}}$'],
+        units=[r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{K}$', r'$\mathrm{g \cdot kg^{-1}}$'],
         labels=['(a) U', '(b) V', '(c) T', '(d) Q'],
         bin_method=PRESSURE,
         obs_type_filter=('lt', 221),
@@ -108,7 +108,7 @@ OBSERVATION_CONFIGS: Dict[str, ObservationConfig] = {
     ),
     "profiler": ObservationConfig(
         variables=['windNorthward', 'windEastward'],
-        units=['$\mathrm{m \cdot s^{-1}}$', '$\mathrm{m \cdot s^{-1}}$'],
+        units=[r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{m \cdot s^{-1}}$'],
         labels=['(a) U', '(b) V'],
         bin_method=PRESSURE,
         file_alias='sondes',
@@ -116,25 +116,25 @@ OBSERVATION_CONFIGS: Dict[str, ObservationConfig] = {
     ),
     "aircraft": ObservationConfig(
         variables=['windNorthward', 'windEastward', 'airTemperature'],
-        units=['$\mathrm{m \cdot s^{-1}}$', '$\mathrm{m \cdot s^{-1}}$', '$\mathrm{K}$'],
+        units=[r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{K}$'],
         labels=['(a) U', '(b) V', '(c) T'],
         bin_method=PRESSURE,
     ),
     "satwind": ObservationConfig(
         variables=['windNorthward', 'windEastward'],
-        units=['$\mathrm{m \cdot s^{-1}}$', '$\mathrm{m \cdot s^{-1}}$'],
+        units=[r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{m \cdot s^{-1}}$'],
         labels=['(a) U', '(b) V'],
         bin_method=PRESSURE,
     ),
     "satwnd": ObservationConfig(
         variables=['windNorthward', 'windEastward'],
-        units=['$\mathrm{m \cdot s^{-1}}$', '$\mathrm{m \cdot s^{-1}}$'],
+        units=[r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{m \cdot s^{-1}}$'],
         labels=['(a) U', '(b) V'],
         bin_method=PRESSURE,
     ),
     "sfc": ObservationConfig(
         variables=['windNorthward', 'windEastward', 'airTemperature', 'specificHumidity', 'stationPressure'],
-        units=['$\mathrm{m \cdot s^{-1}}$', '$\mathrm{m \cdot s^{-1}}$', '$\mathrm{K}$', '$\mathrm{g \cdot kg^{-1}}$', 'Pa'],
+        units=[r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{K}$', r'$\mathrm{g \cdot kg^{-1}}$', 'Pa'],
         labels=['(a) U10', '(b) V10', '(c) T2', '(d) Q2', '(e) Ps'],
         bin_method=PRESSURE,
     ),
@@ -152,7 +152,7 @@ OBSERVATION_CONFIGS: Dict[str, ObservationConfig] = {
     ),
     "radar_rw": ObservationConfig(
         variables=['radialVelocity'],
-        units=['$\mathrm{m \cdot s^{-1}}$'],
+        units=[r'$\mathrm{m \cdot s^{-1}}$'],
         labels=['Radial velocity'],
         bin_method=HEIGHT,
         level_bin_kwargs={'bin_width': 0.5, 'bin_bottom': 0.5, 'bin_top': 12.0},

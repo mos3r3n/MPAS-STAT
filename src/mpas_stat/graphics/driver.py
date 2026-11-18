@@ -1,36 +1,41 @@
-import traceback
-from concurrent.futures import ProcessPoolExecutor, as_completed
+"""Model-space graphics driver: turn a graphic.yaml config into figure jobs.
 
-from .io import (
-    collect_stats_0d,
-    collect_profiles_1d,
-    collect_time_level_2d,
-    collect_lat_vert_2d,
+Each job pairs one collect_* call (reading mpasstat.<date>.nc files) with the
+matching plot_* call; jobs then run sequentially or across a process pool.
+"""
+from ..core.jobs import lead_cfg as _lead_cfg
+from ..core.jobs import resolve_n_workers, run_jobs
+from ..core.timeutils import generate_forecast_leads
+from .collect import (
     collect_lat_lon_2d,
     collect_lat_lon_slice_2d,
-    collect_forecast_lead_0d,
-    generate_forecast_leads,
-    collect_forecast_profiles_1d,
-    collect_forecast_time_level_2d,
-    collect_forecast_lat_vert_2d,
-    collect_forecast_lat_lon_2d,
-    collect_forecast_scorecard,
+    collect_lat_vert_2d,
+    collect_profiles_1d,
+    collect_stats_0d,
+    collect_time_level_2d,
 )
-
-from .functions import (
-    plot_time_series_0d,
-    plot_profiles_1d,
-    plot_profile_diff_1d,
-    plot_time_level_2d,
-    plot_lat_vert_2d,
-    plot_lat_lon_2d,
-    plot_lat_lon_slice_2d,
+from .collect_forecast import (
+    collect_forecast_lat_lon_2d,
+    collect_forecast_lat_vert_2d,
+    collect_forecast_lead_0d,
+    collect_forecast_profiles_1d,
+    collect_forecast_scorecard,
+    collect_forecast_time_level_2d,
+)
+from .plots_0d import (
     plot_forecast_lead_0d,
     plot_forecast_lead_diff_0d,
-    plot_forecast_time_level_2d,
-    plot_forecast_scorecard,
+    plot_time_series_0d,
 )
-
+from .plots_1d import plot_profile_diff_1d, plot_profiles_1d
+from .plots_2d import (
+    plot_forecast_time_level_2d,
+    plot_lat_lon_2d,
+    plot_lat_lon_slice_2d,
+    plot_lat_vert_2d,
+    plot_time_level_2d,
+)
+from .scorecard import plot_forecast_scorecard
 
 DEFAULT_PROFILES = [
     "lat_bin_profile",
@@ -51,21 +56,6 @@ def _cfg_with_variables(cfg, variables):
     new_cfg = dict(cfg)
     new_cfg["variables"] = list(variables)
     return new_cfg
-
-def _lead_cfg(cfg, lead_hour):
-    """Shallow cfg copy carrying a per-lead filename suffix (e.g. "_f006").
-
-    _save_fig appends this suffix to every figure's base filename, so each
-    forecast lead hour gets its own file (instead of overwriting the
-    previous lead's) while landing in the SAME output folder as the
-    corresponding background-mode plot type, e.g.
-    profiles_1d/profile_lat_bin_profile_rms_f006.pdf next to
-    profiles_1d/profile_lat_bin_profile_rms.pdf.
-    """
-    new_cfg = dict(cfg)
-    new_cfg["_lead_suffix"] = f"_f{int(lead_hour):03d}"
-    return new_cfg
-
 
 def _configured_vertical_variables(cfg):
     """Return user-declared 3-D/vertical variables when available."""
@@ -321,54 +311,6 @@ def _job_lat_lon_slice_2d(vcfg, stat_name, one_section_cfg):
     )
 
 
-def _run_job(job):
-    """Run one (func, args, kwargs) job, catching any error so a single bad
-    figure never aborts the rest of the batch -- this matters even more once
-    jobs run in a process pool, where an unhandled exception would otherwise
-    just silently drop that figure and any jobs still queued behind it.
-    """
-    func, args, kwargs = job
-    try:
-        func(*args, **kwargs)
-        return (True, None)
-    except Exception:
-        return (False, traceback.format_exc())
-
-
-def _run_jobs(jobs, n_workers):
-    """Execute collect+plot jobs sequentially, or across a process pool
-    when n_workers > 1 (see cfg["n_workers"] in run_graphics()).
-
-    Process-based (not thread-based) parallelism is required here: each job
-    creates and saves its own matplotlib figure, and a single process's
-    pyplot state is not safe for concurrent figure creation. Each job's
-    func/args/kwargs must be picklable, which holds for every _job_* helper
-    above (module-level functions plus plain dicts/lists/numpy arrays).
-    """
-    n_jobs = len(jobs)
-    if n_jobs == 0:
-        return
-
-    n_workers = max(1, int(n_workers))
-
-    if n_workers == 1:
-        for job in jobs:
-            ok, err = _run_job(job)
-            if not ok:
-                print(f"ERROR in {job[0].__name__}:\n{err}")
-        return
-
-    n_workers = min(n_workers, n_jobs)
-    print(f"Running {n_jobs} plotting jobs across {n_workers} worker processes...")
-    with ProcessPoolExecutor(max_workers=n_workers) as pool:
-        futures = {pool.submit(_run_job, job): job for job in jobs}
-        for future in as_completed(futures):
-            job = futures[future]
-            ok, err = future.result()
-            if not ok:
-                print(f"ERROR in {job[0].__name__}:\n{err}")
-
-
 def run_graphics(cfg):
     """Build every requested figure's collect+plot job, then run them all.
 
@@ -379,7 +321,7 @@ def run_graphics(cfg):
     """
     plot_types = cfg.get("plot_types", ["time_series_0d", "profiles_1d"])
     stats = cfg.get("statistics", [])
-    n_workers = int(cfg.get("n_workers", cfg.get("parallel", {}).get("n_workers", 1)))
+    n_workers = resolve_n_workers(cfg)
 
     jobs = []
 
@@ -486,4 +428,4 @@ def run_graphics(cfg):
                 for stat_name in stats:
                     jobs.append((_job_lat_lon_slice_2d, (vcfg, stat_name, one_section_cfg), {}))
 
-    _run_jobs(jobs, n_workers)
+    run_jobs(jobs, n_workers)
