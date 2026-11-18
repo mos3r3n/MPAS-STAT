@@ -85,6 +85,7 @@ from .common import (
     profile_key_for_domain,
     resolve_diag_base_dir,
     resolve_domains,
+    resolve_statistics_settings,
     resolve_time_settings,
 )
 from .experiments import (
@@ -121,6 +122,11 @@ from .sensor_config import display_var_names, get_bin_method, get_obs_config
 # job creates and saves its own matplotlib figure, and a single process's
 # pyplot state is not safe for concurrent figure creation.
 # ============================================================================
+
+def _time_aggregation(config):
+    """How cycles are combined: "pooled" or "mean" (statistics.time_aggregation)."""
+    return resolve_statistics_settings(config)["time_aggregation"]
+
 
 def _process_sensor(config, diag_obs, sensor_graphic_dir, diag_base_dir):
     """Collect and render every figure for ONE sensor, entirely within
@@ -249,7 +255,7 @@ def generate_profile_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
             pseudo_name: collect_obs_profiles_1d(
                 diag_base_dir, exp_name, diagtype, diag_obs, cycles,
                 display_vars, raw_vars, profile_key, coord_label, invert_y,
-            )
+                time_aggregation=_time_aggregation(config))
             for pseudo_name, (exp_name, diagtype) in zip(pseudo_names, index_map)
         }
 
@@ -304,7 +310,7 @@ def generate_lat_lon_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
             name: collect_obs_lat_lon_2d(
                 diag_base_dir, name, diagtype, diag_obs, cycles,
                 display_vars, raw_vars,
-            )
+                time_aggregation=_time_aggregation(config))
             for name in names
         }
 
@@ -405,7 +411,7 @@ def generate_lat_vert_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
             name: collect_obs_lat_vert_2d(
                 diag_base_dir, name, diagtype, diag_obs, cycles,
                 display_vars, raw_vars, coord_label, invert_y, boot,
-            )
+                time_aggregation=_time_aggregation(config))
             for name in names
         }
 
@@ -455,7 +461,7 @@ def generate_forecast_lead_graphics(config, diag_obs, graphic_out_dir, diag_base
                 exp_name: collect_obs_forecast_lead_0d(
                     diag_base_dir, exp_name, diag_obs, cycles, leads,
                     display_vars, raw_vars, domain, stat_disp, boot,
-                )
+                    time_aggregation=_time_aggregation(config))
                 for exp_name in names
             }
             if any(ForecastLead.values()):
@@ -522,7 +528,7 @@ def generate_forecast_profile_graphics(config, diag_obs, graphic_out_dir, diag_b
                 name: collect_obs_forecast_profiles_1d(
                     diag_base_dir, name, diag_obs, cycles, lead,
                     display_vars, raw_vars, profile_key, coord_label, invert_y, boot,
-                )
+                    time_aggregation=_time_aggregation(config))
                 for name in names
             }
             lead_cfg = _lead_cfg(cfg, lead)
@@ -566,7 +572,7 @@ def generate_forecast_lat_lon_graphics(config, diag_obs, graphic_out_dir, diag_b
         per_exp_latlon = {
             name: collect_obs_forecast_lat_lon_2d(
                 diag_base_dir, name, diag_obs, cycles, lead, display_vars, raw_vars, boot,
-            )
+                time_aggregation=_time_aggregation(config))
             for name in names
         }
         lead_cfg = _lead_cfg(cfg, lead)
@@ -611,7 +617,7 @@ def generate_forecast_lat_vert_graphics(config, diag_obs, graphic_out_dir, diag_
             name: collect_obs_forecast_lat_vert_2d(
                 diag_base_dir, name, diag_obs, cycles, lead,
                 display_vars, raw_vars, coord_label, invert_y, boot,
-            )
+                time_aggregation=_time_aggregation(config))
             for name in names
         }
         lead_cfg = _lead_cfg(cfg, lead)
@@ -669,7 +675,7 @@ def generate_forecast_time_level_graphics(config, diag_obs, graphic_out_dir, dia
                     diag_base_dir, name, diag_obs, cycles, leads,
                     display_vars, raw_vars, profile_key, coord_label, invert_y,
                     stat_disp, boot,
-                )
+                    time_aggregation=_time_aggregation(config))
                 for name in names
             }
             if any(TimeLev.values()):

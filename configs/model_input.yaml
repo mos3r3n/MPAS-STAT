@@ -63,3 +63,14 @@ n_processes: nProcesses
 verbose: true
 
 overwrite: true
+
+# Statistics method (docs/USER_GUIDE.md section 5). "weighted" = area- and
+# mass-weighted, pooled statistics; "legacy" reproduces pre-2026-11 results.
+statistics_method: weighted
+area_weighting: true
+mass_weighting: true
+# Ensemble spread: unbiased variance with the (N+1)/N finite-ensemble factor.
+spread_ddof: 1
+spread_finite_ensemble_correction: true
+# hgt_levels above mean sea level ("msl") or above the model terrain ("agl").
+height_reference: msl

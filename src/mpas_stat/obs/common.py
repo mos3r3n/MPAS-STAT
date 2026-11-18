@@ -132,8 +132,61 @@ DEFAULT_CONFIG = {
     "time_settings": {
         "start_time": "2024-09-13 06:00:00",
         "end_time": "2024-09-21 12:00:00"
-    }
+    },
+    # How statistics are computed and aggregated (see resolve_statistics_settings()).
+    "statistics": {
+        # "weighted" (default) uses the settings below; "legacy" reproduces
+        # the pre-2026-11 behaviour exactly (each diagtype/experiment on its
+        # own QC'd sample, flag 19 passing only for HofX-derived innovations,
+        # spread as mean of per-obs std with ddof 0, cycles averaged as a
+        # plain mean of per-cycle statistics), for comparison with old results.
+        "method": "weighted",
+        # EffectiveQC flag values counted as "passed". 19 is JEDI's
+        # background (first-guess) check, so the background check does not
+        # shape the verified sample.
+        "qc_pass_flags": [0, 19],
+        # Verify every compared quantity on ONE common sample: per cycle and
+        # variable, keep only observations that pass QC (finite innovation)
+        # in every OMB/OMA/OMF vector being compared -- OMB and OMA of each
+        # experiment, and all experiments -- matched by location, vertical
+        # coordinate and time. Otherwise each is computed on its own sample.
+        "common_sample": True,
+        # Ensemble spread per observation: variance with this ddof and the
+        # (N+1)/N finite-ensemble factor; aggregated as sqrt(mean variance).
+        "spread_ddof": 1,
+        "spread_finite_ensemble_correction": True,
+        # How the graphics stage combines cycles: "pooled" (Count-weighted
+        # pooling of sums, e.g. RMS = sqrt(sum n*rms^2 / sum n)) or "mean"
+        # (plain mean of per-cycle statistics).
+        "time_aggregation": "pooled",
+    },
 }
+
+_LEGACY_STATISTICS = {
+    "method": "legacy",
+    "qc_pass_flags": None,           # 0 passes; 19 also passes for HofX-derived innovations only
+    "common_sample": False,
+    "spread_ddof": 0,
+    "spread_finite_ensemble_correction": False,
+    "spread_aggregation": "mean",
+    "time_aggregation": "mean",
+}
+
+
+def resolve_statistics_settings(config: Dict) -> Dict:
+    """Effective statistics settings: config["statistics"] merged over the
+    defaults, or the fixed legacy settings when method == "legacy"."""
+    user = (config or {}).get("statistics") or {}
+    method = user.get("method", DEFAULT_CONFIG["statistics"]["method"])
+    if method == "legacy":
+        return dict(_LEGACY_STATISTICS)
+    if method != "weighted":
+        raise ValueError(f"statistics.method must be 'weighted' or 'legacy', got {method!r}")
+    out = _deep_merge(DEFAULT_CONFIG["statistics"], user)
+    out["spread_aggregation"] = "rms"
+    if out["time_aggregation"] not in ("pooled", "mean"):
+        raise ValueError("statistics.time_aggregation must be 'pooled' or 'mean'")
+    return out
 
 def _deep_merge(base: Dict, override: Dict) -> Dict:
     """Recursively merge `override` on top of a copy of `base`."""
@@ -283,6 +336,8 @@ def resolve_latlon_bounds(config: Dict) -> Tuple[float, float, float, float]:
     if not bounds or any(b is None for b in bounds):
         return -90.0, 90.0, -180.0, 180.0
     lat_min, lat_max, lon_min, lon_max = (float(b) for b in bounds)
+    if lon_max < lon_min:   # box crossing the dateline, e.g. [170, -170] -> [170, 190]
+        lon_max += 360.0
     return lat_min, lat_max, lon_min, lon_max
 
 def _next_valid_cycle_start(start_time: datetime, valid_hours: List[int]) -> datetime:
@@ -543,6 +598,7 @@ __all__ = [
     "STAT_KEYS",
     "STAT_KEYS_2D",
     "resolve_domains",
+    "resolve_statistics_settings",
     "resolve_latlon_bounds",
     "resolve_time_settings",
     "lead_valid_time_allowed",

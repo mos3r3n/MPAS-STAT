@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Dict, Tuple, Any, Optional
 
-from ..core.grouping import grouped_stats_1d
+from ..core.grouping import grouped_stats_1d, grouped_weighted_stats
 from .interp import (
     apply_interp_by_level,
 )
@@ -538,3 +538,159 @@ def build_task_list(
                     tasks.append((var_name, "3D_lat_lon_pres"))
 
     return tasks, expected_dim_groups
+
+
+# ===========================================================================
+# Weighted, pooled statistics (statistics_method: "weighted", the default)
+#
+# Every product pools ALL samples that fall into one output cell -- grid
+# cells in a latitude band / lat-lon box / region and, for products that
+# span several model levels, every level in the column or level bin -- into
+# a single weighted mean / RMS / STD:
+#
+#   * horizontal weight: MPAS cell area (areaCell), so refined regions of a
+#     variable-resolution mesh do not dominate;
+#   * vertical weight (model-level products only): layer pressure thickness
+#     (mass), so thin upper layers do not dominate a column or level bin.
+#
+# Squares are pooled before the square root, so a 2-D lat-lon "RMS" of a
+# 3-D variable is the RMS over the column, not the RMS of the column-mean
+# (signed) error, and ensemble spread is pooled as sqrt(mean variance).
+# Each product also stores its total "weight", used by the graphics stage to
+# pool statistics across cycles.
+# ===========================================================================
+
+def _level_bin_index(level_bins: np.ndarray, n_levels: int) -> np.ndarray:
+    """Level-bin index (0..nbins-1) of each model level 0..n_levels-1."""
+    nbins = len(level_bins) - 1
+    idx = np.searchsorted(level_bins, np.arange(n_levels), side="right") - 1
+    return np.clip(idx, 0, nbins - 1)
+
+
+def _pooled(values, weights, group_ids, shape, spread=None) -> Dict[str, np.ndarray]:
+    """grouped_weighted_stats reshaped to the product's output shape."""
+    n_groups = int(np.prod(shape)) if len(shape) else 1
+    stats = grouped_weighted_stats(values, weights, group_ids, n_groups, spread=spread)
+    if not len(shape):
+        return {k: float(v[0]) for k, v in stats.items()}
+    return {k: v.reshape(shape) for k, v in stats.items()}
+
+
+def _region_cells(lat: np.ndarray, region_name: str, bounds) -> np.ndarray:
+    if region_name.lower() == "global":
+        return np.ones(lat.shape, dtype=bool)
+    lat_min_r, lat_max_r = bounds
+    return (lat >= lat_min_r) & (lat < lat_max_r)
+
+
+def calculate_statistics_one_task_weighted(
+    var_name: str,
+    task_name: str,
+    prepared: Dict[str, Any],
+    meta: Dict[str, Any],
+    config,
+) -> Tuple[str, str, Dict[str, Any]]:
+    """Weighted/pooled counterpart of calculate_statistics_one_task()."""
+    diff = prepared["diff"]
+    spread = prepared["fcst_sprd"]
+    is_3d = prepared["is_3d"]
+
+    lat = meta["lat"]
+    area = meta["cell_weight"]                       # (nCells,)
+    lat_idx = meta["lat_idx"]
+    gid_ll = meta["group_ids_latlon"]
+    nlat = len(meta["lat_bins"]) - 1
+    nlon = len(meta["lon_bins"]) - 1
+    level_bins = meta["level_bins"]
+    nlb = len(level_bins) - 1
+
+    if is_3d:
+        nlev = diff.shape[1]
+        w_col = area[:, None] * meta["level_weight"]  # area x layer mass
+        w_lev = np.broadcast_to(area[:, None], diff.shape)
+        lev = np.broadcast_to(np.arange(nlev)[None, :], diff.shape)
+        lbin = np.broadcast_to(_level_bin_index(level_bins, nlev)[None, :], diff.shape)
+        col = lambda ids: np.broadcast_to(np.asarray(ids)[:, None], diff.shape)  # noqa: E731
+    else:
+        w_col = area
+        col = lambda ids: ids  # noqa: E731
+
+    def interp_product(field, sprd, levels, grouping):
+        """Per-level products on height/pressure levels (area weights only)."""
+        nk = len(levels)
+        k = np.broadcast_to(np.arange(nk)[None, :], field.shape)
+        w = np.broadcast_to(area[:, None], field.shape)
+        if grouping == "lat":
+            return _pooled(field, w, lat_idx[:, None] * nk + k, (nlat, nk), sprd)
+        return _pooled(field, w, gid_ll[:, None] * nk + k, (nlat, nlon, nk), sprd)
+
+    def regional_levels(field, sprd, n_out, level_ids, weights, prefix):
+        out = {}
+        for region_name, bounds in config.regions.items():
+            cells = _region_cells(lat, region_name, bounds)
+            out[f"{prefix}_{region_name}"] = _pooled(
+                field[cells], weights[cells], level_ids[cells], (n_out,),
+                sprd[cells] if sprd is not None else None)
+        return out
+
+    hgt_levels = np.asarray(config.hgt_levels, dtype=np.float64)
+    pres_levels = np.asarray(config.pres_levels, dtype=np.float64)
+
+    if task_name == "0D_regions":
+        out = {}
+        for region_name, bounds in config.regions.items():
+            cells = _region_cells(lat, region_name, bounds)
+            out[region_name] = _pooled(
+                diff[cells], w_col[cells], None, (),
+                spread[cells] if spread is not None else None)
+        return var_name, "0D", out
+
+    if task_name == "1D_lat_bin_profile":
+        return var_name, "1D", {
+            "lat_bin_profile": _pooled(diff, w_col, col(lat_idx), (nlat,), spread)}
+
+    if task_name == "1D_vert_profile":
+        return var_name, "1D", regional_levels(diff, spread, nlev, lev, w_lev, "vert_profile")
+
+    if task_name == "1D_vert_bin_profile":
+        return var_name, "1D", regional_levels(diff, spread, nlb, lbin, w_col, "vert_bin_profile")
+
+    if task_name in ("1D_vert_hgt_profile", "1D_vert_pres_profile"):
+        hgt = task_name == "1D_vert_hgt_profile"
+        field = prepared["diff_hgt"] if hgt else prepared["diff_pres"]
+        sprd = prepared["sprd_hgt"] if hgt else prepared["sprd_pres"]
+        nk = len(hgt_levels if hgt else pres_levels)
+        k = np.broadcast_to(np.arange(nk)[None, :], field.shape)
+        w = np.broadcast_to(area[:, None], field.shape)
+        prefix = "vert_hgt_profile" if hgt else "vert_pres_profile"
+        return var_name, "1D", regional_levels(field, sprd, nk, k, w, prefix)
+
+    if task_name == "2D_lat_lon":
+        return var_name, "2D", {
+            "lat_lon": _pooled(diff, w_col, col(gid_ll), (nlat, nlon), spread)}
+
+    if task_name == "2D_lat_lev":
+        return var_name, "2D", {
+            "lat_lev": _pooled(diff, w_col, col(lat_idx) * nlb + lbin, (nlat, nlb), spread)}
+
+    if task_name == "2D_lat_hgt":
+        return var_name, "2D", {
+            "lat_hgt": interp_product(prepared["diff_hgt"], prepared["sprd_hgt"], hgt_levels, "lat")}
+
+    if task_name == "2D_lat_pres":
+        return var_name, "2D", {
+            "lat_pres": interp_product(prepared["diff_pres"], prepared["sprd_pres"], pres_levels, "lat")}
+
+    if task_name == "3D_lat_lon_lev":
+        return var_name, "3D", {
+            "lat_lon_lev": _pooled(diff, w_col, col(gid_ll) * nlb + lbin, (nlat, nlon, nlb), spread)}
+
+    if task_name == "3D_lat_lon_hgt":
+        return var_name, "3D", {
+            "lat_lon_hgt": interp_product(prepared["diff_hgt"], prepared["sprd_hgt"], hgt_levels, "latlon")}
+
+    if task_name == "3D_lat_lon_pres":
+        return var_name, "3D", {
+            "lat_lon_pres": interp_product(prepared["diff_pres"], prepared["sprd_pres"], pres_levels, "latlon")}
+
+    raise ValueError(f"Unknown task name: {task_name}")

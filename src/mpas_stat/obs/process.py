@@ -22,8 +22,10 @@ from .common import (
     load_config,
     resolve_diag_base_dir,
     resolve_domains,
+    resolve_statistics_settings,
     resolve_time_settings,
 )
+from .matching import restrict_to_common_sample
 from .reader import (
     build_filename,
     build_hofx_forecast_filename,
@@ -167,7 +169,8 @@ def _store_2d_stats(results: Dict, tag: str, idx: Tuple, iv: int, obs_vec: Dict,
 
 def _store_domain_stats(results: Dict, tag: str, idx: Tuple, iv: int, obs_vec: Dict,
                         qc: Optional[np.ndarray], bin_values: np.ndarray,
-                        levels: np.ndarray, bin_method: int) -> None:
+                        levels: np.ndarray, bin_method: int,
+                        settings: Optional[Dict] = None) -> None:
     """Domain-total (0D) and level-binned (1D) statistics of one innovation
     vector -- plus the mean ensemble spread / total spread when present --
     stored at results[<stat>_<tag>][idx..., iv] and
@@ -183,14 +186,17 @@ def _store_domain_stats(results: Dict, tag: str, idx: Tuple, iv: int, obs_vec: D
     for stat in _INNOV_STATS:
         results[f"{stat}_{tag}_bin"][idx + (valid, iv)] = stats[stat][:num_lev][valid]
 
+    # Spread: sqrt(mean variance) ("rms" aggregation, the quantity comparable
+    # with the RMS innovation), or the legacy mean of per-observation spread.
+    agg = "rmse" if (settings or {}).get("spread_aggregation", "mean") == "rms" else "mean"
     for field in _SPREAD_FIELDS:
         if obs_vec[field] is None:
             continue
         stats = calculate_stats(obs_vec[field], qc, bin_values, levels, bin_method)
         if stats["count"][num_lev] > 0:
-            results[f"{field}_{tag}"][idx + (iv,)] = stats["mean"][num_lev]
+            results[f"{field}_{tag}"][idx + (iv,)] = stats[agg][num_lev]
         valid = stats["count"][:num_lev] > 0
-        results[f"{field}_{tag}_bin"][idx + (valid, iv)] = stats["mean"][:num_lev][valid]
+        results[f"{field}_{tag}_bin"][idx + (valid, iv)] = stats[agg][:num_lev][valid]
 
 
 def _metadata(times, levels, obs_config, domains: Dict) -> Dict:
@@ -217,10 +223,17 @@ def _grid_metadata(grids: Dict) -> Dict:
 
 def process_experiment(config: Dict, diag_obs: str) -> Dict:
     """Process OMB/OMA diagnostics for a single observation type, for every
-    "da"/"hofx" experiment and cycle."""
+    "da"/"hofx" experiment and cycle.
+
+    With statistics.common_sample (default), every OMB and OMA vector of a
+    (cycle, variable) -- across all experiments -- is first restricted to the
+    observations valid in all of them (see mpas_stat.obs.matching).
+    """
 
     obs_config = get_obs_config(diag_obs)
     bin_method = get_bin_method(diag_obs)
+    settings = resolve_statistics_settings(config)
+    reader_settings = None if settings["method"] == "legacy" else settings
 
     adjusted_start, end_time, interval = resolve_time_settings(config, diag_obs)
     times = generate_cycles(adjusted_start, end_time, interval)
@@ -236,6 +249,8 @@ def process_experiment(config: Dict, diag_obs: str) -> Dict:
     results.update(_metadata(times, levels, obs_config, domains))
     results.update(_grid_metadata(grids))
 
+    plot_oma = config["plot_settings"].get("plot_oma", True)
+    experiments = []
     for iexp, (exp_name, exp_type, nmember) in enumerate(
         zip(
             config["experiments"]["names"],
@@ -248,76 +263,97 @@ def process_experiment(config: Dict, diag_obs: str) -> Dict:
             # by process_forecast_experiment() -- they don't fit the
             # single-file-per-cycle convention this loop assumes.
             continue
-
         base_dir = (
             config["paths"]["da_dir"]
             if exp_type == "da"
             else config["paths"]["hofx_dir"]
         )
-        outerloop_ana = config["experiments"]["outerloop"][iexp]
+        experiments.append({
+            "iexp": iexp, "name": exp_name, "type": exp_type, "nmember": nmember,
+            "base_dir": base_dir,
+            "outerloop_ana": config["experiments"]["outerloop"][iexp],
+            # OMA only shapes the common sample when it is actually written.
+            "oma_compared": exp_type == "da" and plot_oma,
+        })
 
-        for it, cycle_time in enumerate(times):
-            filedict = build_filename(
-                base_dir, exp_name, exp_type, nmember, cycle_time, diag_obs
-            )
+    for it, cycle_time in enumerate(times):
+        filedicts = {
+            e["iexp"]: build_filename(e["base_dir"], e["name"], e["type"], e["nmember"],
+                                      cycle_time, diag_obs)
+            for e in experiments
+        }
 
-            for iv, diag_var in enumerate(obs_config.variables):
+        for iv, diag_var in enumerate(obs_config.variables):
+            vectors = {}
+            for e in experiments:
+                filedict = filedicts[e["iexp"]]
                 omb_vec = load_observation_data(
                     filedict["bak"], diag_obs, diag_var, bin_method,
-                    outerloop=0, nmember=nmember,
+                    outerloop=0, nmember=e["nmember"], settings=reader_settings,
                 )
                 oma_vec = (
                     load_observation_data(
                         filedict["ana"], diag_obs, diag_var, bin_method,
-                        outerloop=outerloop_ana, nmember=nmember,
+                        outerloop=e["outerloop_ana"], nmember=e["nmember"],
+                        settings=reader_settings,
                     )
                     if filedict["ana"] else None
                 )
+                vectors[e["iexp"]] = (omb_vec, oma_vec)
+
+            if settings["common_sample"]:
+                order = []
+                for e in experiments:
+                    order.append((e["iexp"], 0))
+                    if e["oma_compared"]:
+                        order.append((e["iexp"], 1))
+                matched = restrict_to_common_sample(
+                    [vectors[i][k] for i, k in order],
+                    label=f"{diag_obs} {diag_var} {cycle_time:%Y%m%d%H}")
+                for (i, k), vec in zip(order, matched):
+                    pair = list(vectors[i])
+                    pair[k] = vec
+                    vectors[i] = tuple(pair)
+
+            for e in experiments:
+                iexp = e["iexp"]
+                omb_vec, oma_vec = vectors[iexp]
                 if omb_vec is None:
                     continue
-
-                # OMA may come from a separate `_ana.h5` file whose
-                # observation ordering/length is not guaranteed to match
-                # OMB, so it is always binned with its own coordinates.
-                has_oma = oma_vec is not None and oma_vec["innov"] is not None
-                omb_bins = _bin_values(omb_vec, bin_method)
-                oma_bins = _bin_values(oma_vec, bin_method) if has_oma else None
-
-                # 2-D lat-lon / lat-vert gridded stats (domain-independent)
-                _store_2d_stats(results, "omb", (iexp, it), iv, omb_vec,
-                                omb_bins, bin_method, grids)
-                if has_oma:
-                    _store_2d_stats(results, "oma", (iexp, it), iv, oma_vec,
-                                    oma_bins, bin_method, grids)
-
-                for idom, (dom_name, dom_coords) in enumerate(domains.items()):
-                    omb_qc = _apply_domain_mask(
-                        omb_vec["qc"], omb_vec["lat"], omb_vec["lon"],
-                        dom_name, dom_coords,
-                    )
-                    _store_domain_stats(results, "omb", (iexp, idom, it), iv,
-                                        omb_vec, omb_qc, omb_bins, levels, bin_method)
-                    if has_oma:
-                        oma_qc = _apply_domain_mask(
-                            oma_vec["qc"], oma_vec["lat"], oma_vec["lon"],
-                            dom_name, dom_coords,
-                        )
-                        _store_domain_stats(results, "oma", (iexp, idom, it), iv,
-                                            oma_vec, oma_qc, oma_bins, levels, bin_method)
+                _store_innovation_stats(results, iexp, it, iv, omb_vec, oma_vec,
+                                        domains, levels, bin_method, grids, settings)
 
     return results
 
 
-# ============================================================================
-# OMF (obs-minus-forecast, extended-forecast skill) statistics
-#
-# Same 0D/1D/2D group convention as process_experiment() /
-# write_obs_diag_files() above, but resolved at every (init cycle, forecast
-# lead hour) pair instead of just per assimilation cycle -- mirroring how
-# the model-space package's scripts/run_verify_model_fcst.ksh points
-# src/mpas_stat/cli/model_stats.py at ExtendedFC/<cycle>/mpasout.<valid_date>.nc
-# files instead of CyclingFC ones, one call per lead hour.
-# ============================================================================
+def _store_innovation_stats(results, iexp, it, iv, omb_vec, oma_vec, domains,
+                            levels, bin_method, grids, settings) -> None:
+    """All OMB (and, when present, OMA) statistics of one experiment/cycle/variable."""
+    # OMA may come from a separate `_ana.h5` file whose observation
+    # ordering/length is not guaranteed to match OMB, so it is always binned
+    # with its own coordinates.
+    has_oma = oma_vec is not None and oma_vec["innov"] is not None
+    omb_bins = _bin_values(omb_vec, bin_method)
+    oma_bins = _bin_values(oma_vec, bin_method) if has_oma else None
+
+    # 2-D lat-lon / lat-vert gridded stats (domain-independent)
+    _store_2d_stats(results, "omb", (iexp, it), iv, omb_vec, omb_bins, bin_method, grids)
+    if has_oma:
+        _store_2d_stats(results, "oma", (iexp, it), iv, oma_vec, oma_bins, bin_method, grids)
+
+    for idom, (dom_name, dom_coords) in enumerate(domains.items()):
+        omb_qc = _apply_domain_mask(
+            omb_vec["qc"], omb_vec["lat"], omb_vec["lon"], dom_name, dom_coords,
+        )
+        _store_domain_stats(results, "omb", (iexp, idom, it), iv,
+                            omb_vec, omb_qc, omb_bins, levels, bin_method, settings)
+        if has_oma:
+            oma_qc = _apply_domain_mask(
+                oma_vec["qc"], oma_vec["lat"], oma_vec["lon"], dom_name, dom_coords,
+            )
+            _store_domain_stats(results, "oma", (iexp, idom, it), iv,
+                                oma_vec, oma_qc, oma_bins, levels, bin_method, settings)
+
 
 def process_forecast_experiment(config: Dict, diag_obs: str) -> Dict:
     """Process OMF (extended-forecast) diagnostics for a single observation
@@ -325,10 +361,16 @@ def process_forecast_experiment(config: Dict, diag_obs: str) -> Dict:
     type == "hofx_forecast" contribute -- see build_hofx_forecast_filename()
     for the expected HofX directory layout, and config["forecast"] (length/
     interval/start, same schema as the model-space graphic.yaml) for the
-    lead-hour list."""
+    lead-hour list.
+
+    With statistics.common_sample (default), the OMF vectors of all
+    experiments for one (init cycle, lead, variable) are first restricted to
+    the observations valid in all of them."""
 
     obs_config = get_obs_config(diag_obs)
     bin_method = get_bin_method(diag_obs)
+    settings = resolve_statistics_settings(config)
+    reader_settings = None if settings["method"] == "legacy" else settings
 
     adjusted_start, end_time, interval = resolve_time_settings(config, diag_obs, for_forecast=True)
     times = generate_cycles(adjusted_start, end_time, interval)
@@ -347,41 +389,49 @@ def process_forecast_experiment(config: Dict, diag_obs: str) -> Dict:
     results.update(_grid_metadata(grids))
 
     hofx_dir = config["paths"].get("hofx_dir")
-
-    for iexp, (exp_name, exp_type, nmember) in enumerate(
-        zip(
+    experiments = [
+        (iexp, exp_name, nmember)
+        for iexp, (exp_name, exp_type, nmember) in enumerate(zip(
             config["experiments"]["names"],
             config["experiments"]["types"],
             config["experiments"]["n_member"],
-        )
-    ):
-        if exp_type != "hofx_forecast":
-            continue
+        ))
+        if exp_type == "hofx_forecast"
+    ]
 
-        for it, init_time in enumerate(times):
-            for il, lead in enumerate(leads):
+    for it, init_time in enumerate(times):
+        for il, lead in enumerate(leads):
 
-                # The INIT time list above is deliberately unrestricted (see
-                # resolve_time_settings()'s for_forecast=True docstring) --
-                # a forecast can launch at any hour the model cycles at. What
-                # a sensor's cycle_valid_hours actually restricts is whether
-                # THIS LEAD's valid time (init_time + lead) lands on an hour
-                # that sensor actually observes at (e.g. sondes only launch
-                # at 00Z/12Z). A disallowed lead is simply skipped here,
-                # leaving its slot at the NaN fill value already in `results`
-                # -- same convention as any other kind of missing data.
-                if not lead_valid_time_allowed(diag_obs, init_time, lead):
-                    continue
+            # The INIT time list above is deliberately unrestricted (see
+            # resolve_time_settings()'s for_forecast=True docstring) -- a
+            # forecast can launch at any hour the model cycles at. What a
+            # sensor's cycle_valid_hours actually restricts is whether THIS
+            # LEAD's valid time (init_time + lead) lands on an hour that
+            # sensor actually observes at (e.g. sondes only launch at
+            # 00Z/12Z). A disallowed lead is simply skipped here, leaving its
+            # slot at the NaN fill value already in `results` -- same
+            # convention as any other kind of missing data.
+            if not lead_valid_time_allowed(diag_obs, init_time, lead):
+                continue
 
-                filename = build_hofx_forecast_filename(
-                    hofx_dir, exp_name, init_time, lead, diag_obs
-                )
+            filenames = {
+                iexp: build_hofx_forecast_filename(hofx_dir, exp_name, init_time, lead, diag_obs)
+                for iexp, exp_name, _ in experiments
+            }
 
-                for iv, diag_var in enumerate(obs_config.variables):
-                    omf_vec = load_observation_data(
-                        filename, diag_obs, diag_var, bin_method,
-                        outerloop=0, nmember=nmember,
+            for iv, diag_var in enumerate(obs_config.variables):
+                vecs = [
+                    load_observation_data(
+                        filenames[iexp], diag_obs, diag_var, bin_method,
+                        outerloop=0, nmember=nmember, settings=reader_settings,
                     )
+                    for iexp, _, nmember in experiments
+                ]
+                if settings["common_sample"]:
+                    vecs = restrict_to_common_sample(
+                        vecs, label=f"{diag_obs} {diag_var} {init_time:%Y%m%d%H} f{int(lead):03d}")
+
+                for (iexp, _, _), omf_vec in zip(experiments, vecs):
                     if omf_vec is None:
                         continue
 
@@ -395,7 +445,8 @@ def process_forecast_experiment(config: Dict, diag_obs: str) -> Dict:
                             dom_name, dom_coords,
                         )
                         _store_domain_stats(results, "omf", (iexp, idom, it, il), iv,
-                                            omf_vec, omf_qc, bin_values, levels, bin_method)
+                                            omf_vec, omf_qc, bin_values, levels, bin_method,
+                                            settings)
 
     return results
 

@@ -5,6 +5,7 @@ from datetime import timedelta
 
 import numpy as np
 
+from ..core.pooling import read_components
 from ..core.timeutils import datetime_to_cycle, datetime_to_datefile
 
 
@@ -113,3 +114,14 @@ def apply_region_suffix(name, cfg):
         return name
 
     return f"{name}_{region}"
+
+
+def read_stat(ds, path):
+    """(value, w, m1, m2) for the statistic at "<group path>/<stat>", with the
+    pooling components read from the same group (see
+    mpas_stat.core.pooling.read_components)."""
+    group_path, stat_name = path.strip("/").rsplit("/", 1)
+    grp = ds
+    for p in group_path.split("/"):
+        grp = grp[p]
+    return read_components(grp, stat_name)

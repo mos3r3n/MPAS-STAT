@@ -47,7 +47,13 @@ def _build_mpas_var_map():
         # 3D
         'U':   {'func': lambda mpas: mpas['uReconstructZonal'][0, :, :], 'units': r"$\mathrm{m\,s^{-1}}$"},
         'V':   {'func': lambda mpas: mpas['uReconstructMeridional'][0, :, :], 'units': r"$\mathrm{m\,s^{-1}}$"},
-        'Tv':  {'func': lambda mpas: mpas['theta'][0, :, :], 'units': r"$\mathrm{K}$"},
+        'TH':  {'func': lambda mpas: mpas['theta'][0, :, :], 'units': r"$\mathrm{K}$"},
+        # Virtual temperature from T and the water-vapour mixing ratio qv:
+        # Tv = T (1 + qv/eps) / (1 + qv), eps = Rd/Rv = 0.622. (Before
+        # 2026-11 'Tv' mistakenly returned potential temperature; use 'TH'.)
+        'Tv':  {'func': lambda mpas: (mpas['theta'][0, :, :] * (_get_pressure(mpas) / 100000.0) ** 0.286
+                                      * (1.0 + mpas['qv'][0, :, :] / 0.622) / (1.0 + mpas['qv'][0, :, :])),
+                'units': r"$\mathrm{K}$"},
         'Qv':  {'func': lambda mpas: mpas['qv'][0, :, :] * 1000.0, 'units': r"$\mathrm{g\,kg^{-1}}$"},
         'Q':   {'func': lambda mpas: mpas['qv'][0, :, :] / (1.0 + mpas['qv'][0, :, :]) * 1000.0, 'units': r"$\mathrm{g\,kg^{-1}}$"},
         'Qc':  {'func': lambda mpas: mpas['qc'][0, :, :] * 1000.0, 'units': r"$\mathrm{g\,kg^{-1}}$"},

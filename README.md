@@ -201,6 +201,12 @@ obs-space statistics -> diagnosis file -> collector round trip. They need `numpy
 
 ## Status and known limitations
 
+- Statistics are area/mass-weighted, pooled over cycles, and (obs space)
+  computed on one common observation sample; QC flag 19 counts as passed.
+  This changed in 2026-11 — see USER_GUIDE §5, including the switches that
+  reproduce older results exactly.
+- Bootstrap significance treats cycles as independent, so it is somewhat
+  optimistic (USER_GUIDE §5.5).
 - Percent-reduction/difference figures use **positive = improvement**.
 - Percent differences are suppressed when the reference value is below the
   configured `relative_min_reference` threshold (and a separate, larger

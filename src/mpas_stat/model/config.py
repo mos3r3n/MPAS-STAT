@@ -43,6 +43,31 @@ class MPASConfig:
 
     regional: bool = False
 
+    # Statistics method.
+    #   "weighted" (default): every product pools all samples in an output
+    #       cell with area weights (areaCell) and, across model levels,
+    #       layer-mass (pressure-thickness) weights; squares are pooled
+    #       before the square root (2-D/level-bin RMS is the RMS over the
+    #       column/bin, not of the column-mean error); ensemble spread is
+    #       pooled as sqrt(mean variance); each product stores its "weight".
+    #   "legacy": the pre-2026-11 kernels (unweighted, level-averaged errors
+    #       before squaring, mean of spread), for comparison with old results.
+    statistics_method: str = "weighted"
+    area_weighting: bool = True     # weighted method: weight cells by areaCell
+    mass_weighting: bool = True     # weighted method: weight model levels by layer pressure thickness
+
+    # Ensemble spread per grid point: variance with this delta-degrees-of-
+    # freedom (1 = unbiased) and, optionally, the finite-ensemble factor
+    # (N+1)/N so that spread is directly comparable with the RMSE of the
+    # ensemble mean (Fortin et al. 2014). Ignored by statistics_method "legacy"
+    # (ddof 0, no correction).
+    spread_ddof: int = 1
+    spread_finite_ensemble_correction: bool = True
+
+    # Reference for hgt_levels: "msl" (height above mean sea level, as
+    # zgrid) or "agl" (height above the model terrain, zgrid[:, 0]).
+    height_reference: str = "msl"
+
     # For parallel run
     n_processes: int = 4
 
@@ -55,4 +80,14 @@ class MPASConfig:
         """Create configuration from YAML file"""
         with open(yaml_file, 'r') as f:
             config_data = yaml.safe_load(f)
-        return cls(**config_data)
+        config = cls(**config_data)
+        config.validate()
+        return config
+
+    def validate(self):
+        if self.statistics_method not in ("weighted", "legacy"):
+            raise ValueError(f"statistics_method must be 'weighted' or 'legacy', got {self.statistics_method!r}")
+        if self.height_reference not in ("msl", "agl"):
+            raise ValueError(f"height_reference must be 'msl' or 'agl', got {self.height_reference!r}")
+        if self.spread_ddof not in (0, 1):
+            raise ValueError(f"spread_ddof must be 0 or 1, got {self.spread_ddof!r}")

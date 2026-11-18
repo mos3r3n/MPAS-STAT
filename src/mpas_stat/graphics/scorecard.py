@@ -5,7 +5,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ..core.bootstrap import bootstrap_reduction_ci, get_bootstrap_settings, safe_nanmean
+from ..core.bootstrap import get_bootstrap_settings
+from ..core.pooling import entry_reduction_ci, entry_value
 from .style import (
     _ensure_panel_ticks,
     _relative_ref_threshold,
@@ -104,13 +105,10 @@ def plot_forecast_scorecard(ScoreCard, row_labels, stat_name, cfg):
                 ax.axhspan(irow - 0.5, irow + 0.5, color="0.85", zorder=0)
                 continue
 
-            red, ci_low, ci_high = bootstrap_reduction_ci(
-                ref_samples, exp_samples,
-                n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"],
-            )
+            red, ci_low, ci_high = entry_reduction_ci(ref_rows[irow], exp_rows[irow], boot)
             var_key   = row_labels[irow].split()[0]
             threshold = _relative_ref_threshold(var_key, cfg)
-            ref_mean  = safe_nanmean(ref_samples, axis=0)
+            ref_mean  = entry_value(ref_rows[irow])
             small_ref = ~np.isfinite(ref_mean) | (np.abs(ref_mean) < threshold)
             red     = np.where(small_ref, np.nan, red)
             ci_low  = np.where(small_ref, np.nan, ci_low)

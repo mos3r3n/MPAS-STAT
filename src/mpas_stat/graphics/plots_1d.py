@@ -5,7 +5,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ..core.bootstrap import bootstrap_reduction_ci, get_bootstrap_settings, safe_nanmean
+from ..core.bootstrap import get_bootstrap_settings
+from ..core.pooling import entry_reduction_ci, entry_value
 from .axes import (
     _apply_latitude_formatter,
     _categorical_positions,
@@ -250,7 +251,6 @@ def plot_profile_diff_1d(Profiles, profile_key, stat_name, cfg):
             ax.axis("off")
             continue
 
-        ref_samples = ref_entry["samples"]
         coord       = ref_entry["coord"]
         clabel      = ref_entry["coord_label"]
         y_label     = "Latitude" if profile_key == "lat_bin_profile" else clabel
@@ -264,12 +264,9 @@ def plot_profile_diff_1d(Profiles, profile_key, stat_name, cfg):
             if exp_entry is None:
                 continue
 
-            red, ci_low, ci_high = bootstrap_reduction_ci(
-                ref_samples, exp_entry["samples"],
-                n_boot=boot["n_boot"], ci=boot["ci"], seed=boot["seed"],
-            )
+            red, ci_low, ci_high = entry_reduction_ci(ref_entry, exp_entry, boot)
             threshold = _relative_ref_threshold(var_name, cfg)
-            ref_mean = safe_nanmean(ref_samples, axis=0)
+            ref_mean = entry_value(ref_entry)
             small_ref = ~np.isfinite(ref_mean) | (np.abs(ref_mean) < threshold)
             red = np.where(small_ref, np.nan, red)
             ci_low = np.where(small_ref, np.nan, ci_low)

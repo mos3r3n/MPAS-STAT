@@ -76,4 +76,5 @@ def create_config_from_args(args):
     if args.overwrite:
         config.overwrite = True
     
+    config.validate()
     return config
