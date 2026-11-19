@@ -3,7 +3,7 @@
 Reads back the observation-space "diagnosis" netCDF files written by
 mpas_stat.obs.diag (the separate STATISTICS stage) -- one per
 (experiment, cycle, obs type), at
-    <diag_dir>/<experiment>/VerifyObs/<cycle>/obsstat_<obs>.<date>.nc
+    <diag_dir>/<experiment>/VerifyOBS/<cycle>/obsstat_<obs>.<date>.nc
 -- and draws figures for each obs type by calling MPAS-STAT's own graphic
 functions directly (mpas_stat.graphics.functions.plot_time_series_0d /
 plot_profiles_1d / plot_lat_lon_2d / plot_forecast_lead_0d), exactly as used
@@ -743,7 +743,7 @@ def main(config_path=None):
     sensor_tasks = []
     for diag_obs in config["sensors"]:
         # Diagnosis files now live under <diag_base_dir>/<experiment>/
-        # VerifyObs/... (one subtree per experiment, obs type identified
+        # VerifyOBS/... (one subtree per experiment, obs type identified
         # only by filename) rather than a single <diag_base_dir>/<diag_obs>/
         # directory -- see obs_diag_file()/obs_diag_forecast_file() in
         # src/mpas_stat/obs/common.py. obs_diag_sensor_has_files() checks across every

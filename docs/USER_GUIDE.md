@@ -173,8 +173,9 @@ engine above** — see §3.
 | `src/mpas_stat/obs/common.py` | Shared layer: config schema, bin-level helpers, netCDF group naming, and the file-path convention. Imports `obs/sensor_config.py` for sensor lookups. Imported by both stages below so they can never disagree on where files live. |
 | `src/mpas_stat/obs/diag.py` | **Statistics stage** entry point (facade). Reads IODA obs-space HDF5, computes OMB/OMA/OMF stats, writes diagnosis netCDF files. No `matplotlib` import. Implemented in `obs/reader.py` (file names, `load_observation_data`), `obs/binning.py` (0D/1D/2D statistics kernels), `obs/bounds.py` (`latlon_domain: auto`), `obs/process.py` (`process_experiment`, `process_forecast_experiment`, `main`) and `obs/writer.py` (diagnosis-file writers). |
 | `src/mpas_stat/obs/plot.py` | **Graphics stage** entry point (facade). Reads the diagnosis netCDF files back and draws figures by calling `mpas_stat.graphics.functions` directly. No `h5py` import. Implemented in `obs/collect.py` (`collect_obs_*` readers), `obs/experiments.py` (experiment lists/colours/graphic cfg) and `obs/figures.py` (`generate_*_graphics`, `main`). |
-| `scripts/run_verify_obs.ksh` | PBS job script for **OMB/OMA** (cycling DA) verification: writes a config YAML from its own exported settings, then runs both stages. |
-| `scripts/run_verify_obs_fcst.ksh` | PBS job script for **OMF** (extended-forecast skill) verification: same idea, `experiments.types: [hofx_forecast, ...]` and a `forecast:` block. |
+| `scripts/run_verify_obs.ksh` | PBS job script for **OMB/OMA** (cycling DA) statistics: one experiment, one `obs_stats` run per cycle from `configs/obs_input.yaml`, output in `<main_dir>/<exp>/VerifyOBS/<cycle>/` (like `run_verify_model.ksh`). |
+| `scripts/run_verify_obs_fcst.ksh` | PBS job script for **OMF** (extended-forecast skill) statistics: per initialization cycle and forecast hour, output in `<main_dir>/<exp>/VerifyOBS/<init>/f<HHH>/` (like `run_verify_model_fcst.ksh`). |
+| `configs/obs_input.yaml`, `configs/obs_graphic.yaml` | Templates for the per-cycle statistics runs and for the graphics stage. |
 | `src/mpas_stat/radar/common.py` | **Radar composite-reflectivity product** (§2.6, separate opt-in add-on): shared config schema (`radar:` block), composite-reflectivity gridding, RMSE, bootstrap/aggregation, and the METplus/`grid_stat` integration that computes per-cycle FSS/categorical neighborhood scores — this pipeline's counterpart of `obs/common.py`, imported by both stages below. No plotting, no HDF5-obs-reading orchestration of its own. |
 | `src/mpas_stat/radar/metplus_embed.py` | MET **Python-embedding** script `grid_stat` (via METplus) calls to read back the gridded obs/HofX fields `radar/common.py` writes to a scratch `.npz` cache — see §2.6's METplus subsection. Not meant to be run by hand. |
 | `src/mpas_stat/radar/diag.py` | Radar product **statistics stage.** Reads HofX obsout HDF5 for `hofx_forecast` experiments, grids obs/hofx composite reflectivity, writes `radarstat_<obs>.<date>.nc` diagnosis files. |
@@ -207,24 +208,35 @@ python -m mpas_stat.cli.obs_stats my_config.yaml
 python -m mpas_stat.cli.obs_graphics my_config.yaml
 ```
 
-Both stages read the **same config file** (unlike the model side, which
-splits `configs/model_input.yaml` / `configs/model_graphic.yaml`) — the
-obs-space schema is smaller and sensor list / experiments / domains / time
-range are needed by both stages to agree on which cycles (and lead hours) and
-sensors to look for.
+A single config can drive both stages for a whole date range (as above,
+handy for quick looks). Production runs follow the model-space layout
+instead:
 
-`scripts/run_verify_obs.ksh` / `scripts/run_verify_obs_fcst.ksh` are PBS
-job-script wrappers around the two commands above, mirroring
-`scripts/run_verify_model.ksh` in spirit (same PBS directives,
-retry-on-failure loop). They are simpler than their model-space
-counterpart, though: **neither loops per cycle in the shell.** Both python
-stages already sweep the *entire* configured cycle range (and, for OMF,
-every forecast lead hour) internally from a single config file, so each job
-script templates one YAML config from its own exported shell variables and
-runs the two stages exactly once each — there is no per-cycle
-`sed`/re-invoke loop like `scripts/run_verify_model.ksh`'s. Edit the `export ...`
-lines near the top of either script to point it at real
-experiments/sensors/directories, then `qsub scripts/run_verify_obs[_fcst].ksh`.
+- **Statistics, per experiment and cycle.** `scripts/run_verify_obs.ksh`
+  (OMB/OMA) and `scripts/run_verify_obs_fcst.ksh` (OMF, also looping over
+  forecast hours) copy the template `configs/obs_input.yaml` into
+  `<main_dir>/<exp>/VerifyOBS/<cycle>[/f<HHH>]/input.yaml`, fill its
+  placeholders with `sed`, and run `obs_stats` there with retries — exactly
+  like `run_verify_model*.ksh` with `configs/model_input.yaml`. The
+  statistics files and the run log (`verify_obs.log`) stay in that folder.
+- **Common sample across experiments.** Each job lists the experiments to
+  compare against in `compare_exps`. They are read (to find the
+  observations valid in all experiments, §5.4) but only the job's own
+  experiment is written (`experiments.write`). Run one job per experiment
+  with the same set of experiments.
+- **Graphics, all experiments together.** `python -m
+  mpas_stat.cli.obs_graphics -c configs/obs_graphic.yaml`, with `diag_dir`
+  set to the same `main_dir`, like `model_graphics` with
+  `configs/model_graphic.yaml`.
+
+Keep `domains` and the 2-D grid settings (`latlon_domain`,
+`latlon_*_bin_width`) identical in `obs_input.yaml` and `obs_graphic.yaml`,
+and use a named `latlon_domain` rather than `auto`: per-cycle runs would
+otherwise each pick a different grid.
+
+If the job activates a conda environment, do it in the scripts' "Python
+environment" section, which relaxes `set -u` around the activation (conda
+hooks often read unset variables, e.g. `GEOMETRIC_DATA_DIR`).
 
 ### 2.3 Config file — key fields
 
@@ -245,7 +257,8 @@ n_workers: 1
 paths:
   da_dir: ...       # CyclingDA root for exp_type: da
   hofx_dir: ...      # root for exp_type: hofx (no OMA)
-  diag_dir: ...       # obs-space diagnosis netCDF files (defaults to <graphic_dir>/diag_files)
+  diag_dir: ...       # statistics root: files go to <diag_dir>/<exp>/VerifyOBS/ (default <graphic_dir>/diag_files;
+                      # the PBS scripts set it to main_dir, so files sit in each experiment's folder)
   graphic_dir: ...    # figures
 
 experiments:
@@ -256,6 +269,8 @@ experiments:
   outerloop: [2, 0]             # which analysis outer-loop's OMA to read ("da", n_member==1 only)
   n_member: [1, 1]              # >1 enables ensemble spread; also changes WHERE OMA is read from --
                                   # see note below
+  write: [exp_a]                # optional: write statistics files only for these experiments; the
+                                  # others are read only, to define the common sample (default: all)
 
 sensors: [sondes, aircraft, amsua_n18, ...]   # keys into OBSERVATION_CONFIGS (src/mpas_stat/obs/sensor_config.py)
 
@@ -730,7 +745,7 @@ e.g. `radar_zh*`'s existing HEIGHT-binned products) and `radar.sensors`
 (this product) for the identical `diag_obs` name — the two products' files
 never collide because this one uses a distinct `radarstat_` filename
 prefix instead of `obsstat_`, in the same
-`<diag_base_dir>/<exp>/VerifyObs/<init_cycle>/f<HHH>/` directory (see
+`<diag_base_dir>/<exp>/VerifyOBS/<init_cycle>/f<HHH>/` directory (see
 `radar_composite_diag_file()` in `src/mpas_stat/obs/common.py` — the path-convention
 function lives there, alongside `obs_diag_forecast_file()`, for
 consistency with every other path helper in the package, even though the
@@ -1033,9 +1048,9 @@ MPAS-STAT/
 ├── legacy/radar_reflectivity_verify.py       # original standalone radar script
 │
 └── <exp_name>/VerifyModel/<cycle>/mpasstat.<date>.nc              # model-space diagnosis files
-    <diag_dir>/<exp_name>/VerifyObs/<cycle>/obsstat_<sensor>.<date>.nc   # obs-space OMB/OMA diagnosis files
-    <diag_dir>/<exp_name>/VerifyObs/<init_cycle>/f<HHH>/obsstat_<sensor>.<date>.nc   # obs-space OMF diagnosis files
-    <diag_dir>/<exp_name>/VerifyObs/<init_cycle>/f<HHH>/radarstat_<sensor>.<date>.nc # radar composite-reflectivity diagnosis files
+    <diag_dir>/<exp_name>/VerifyOBS/<cycle>/obsstat_<sensor>.<date>.nc   # obs-space OMB/OMA diagnosis files
+    <diag_dir>/<exp_name>/VerifyOBS/<init_cycle>/f<HHH>/obsstat_<sensor>.<date>.nc   # obs-space OMF diagnosis files
+    <diag_dir>/<exp_name>/VerifyOBS/<init_cycle>/f<HHH>/radarstat_<sensor>.<date>.nc # radar composite-reflectivity diagnosis files
 ```
 
 The experiment sits at the top of the obs-space tree too, exactly mirroring
@@ -1044,7 +1059,7 @@ the model-space `<exp_name>/VerifyModel/...` convention (`obs_diag_file()` /
 `<sensor>` directory level, since the filename itself
 (`obsstat_<sensor>.<date>.nc`) already identifies the sensor. Every sensor's
 files for one (experiment, cycle) pair land side by side in the same
-`VerifyObs/<cycle>/` directory, distinguished only by filename, and every
+`VerifyOBS/<cycle>/` directory, distinguished only by filename, and every
 diagnosis file for one experiment lives under a single
 `<diag_dir>/<exp_name>/` subtree, which is what lets that whole experiment's
 obs-space output be archived, rsynced, or deleted as one unit.
@@ -1052,9 +1067,11 @@ obs-space output be archived, rsynced, or deleted as one unit.
 > **Note for anyone with an existing `diag_dir` from before this
 > convention.** Diagnosis files have gone through two now-obsolete older
 > layouts: `<sensor>` first
-> (`<diag_dir>/<sensor>/<exp_name>/VerifyObs/...`), and later `<sensor>` as
+> (`<diag_dir>/<sensor>/<exp_name>/VerifyOBS/...`), and later `<sensor>` as
 > its own directory level under each experiment
-> (`<diag_dir>/<exp_name>/VerifyObs/<sensor>/<cycle>/...`). None of these
+> (`<diag_dir>/<exp_name>/VerifyOBS/<sensor>/<cycle>/...`). Until 2026-11 the
+> folder was also spelled `VerifyObs`; rename it to `VerifyOBS` (or re-run the
+> statistics) to use files written before then. None of these
 > three layouts are compatible with each other on disk
 > (`src/mpas_stat/obs/plot.py` looks for files under the current layout
 > only). Either re-run `src/mpas_stat/obs/diag.py` to regenerate files under

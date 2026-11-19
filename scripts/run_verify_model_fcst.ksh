@@ -55,6 +55,19 @@ export forecast_length=24
 export forecast_interval=6
 
 #####################################
+# Python environment
+#
+# Conda activation hooks often read variables that are not set yet (e.g.
+# GEOMETRIC_DATA_DIR in geometric_features-activate.sh), which aborts the
+# job under `set -u`. Relax it while activating.
+#####################################
+
+set +u
+# source /path/to/miniconda3/etc/profile.d/conda.sh
+# conda activate mpas_mesh
+set -u
+
+#####################################
 # Directories
 #####################################
 
@@ -191,8 +204,10 @@ while [[ ${idate} -le ${end_date} ]]; do
         # Working directory
         #################################
 
+        # Background statistics go straight into <cycle>/, where the model
+        # graphics stage reads them (graphics/ncread.py get_mpasstat_file).
         if [[ "${verify_mode}" == "background" ]]; then
-            verify_dir="${working_dir}/${idate}/background"
+            verify_dir="${working_dir}/${idate}"
         else
             verify_dir="${working_dir}/${idate}/f$(printf '%03d' ${forecast_hour})"
         fi

@@ -1,0 +1,74 @@
+# Observation-space graphics configuration.
+# Used by: python -m mpas_stat.cli.obs_graphics -c configs/obs_graphic.yaml
+#
+# Reads the statistics files written by scripts/run_verify_obs*.ksh from
+#   <diag_dir>/<exp>/VerifyOBS/...
+# for every experiment and cycle below, and writes figures to graphic_dir.
+# Keep `domains` and the 2-D grid settings in plot_settings identical to
+# configs/obs_input.yaml.
+
+paths:
+  diag_dir: /path/to/regional_mpasjedi   # same as mainDir in the stats runs
+  graphic_dir: /path/to/verify_obs
+
+experiments:
+  names:
+    - exp_control
+    - exp_test
+  labels:
+    - Control
+    - Test
+  types: [da, da]           # "da" -> OMB+OMA, "hofx" -> OMB only, "hofx_forecast" -> OMF
+  outerloop: [2, 2]
+  n_member: [1, 1]
+
+sensors:
+  - sondes
+  - profiler
+  - aircraft
+  - satwind
+  - satwnd
+  - sfc
+  - gnssrorefncep
+  - amsua_n18
+  - amsua_n19
+  - amsua_metop-b
+  - amsua_metop-c
+  - mhs_n19
+  - mhs_metop-b
+  - mhs_metop-c
+
+domains:
+  global: [null, null, null, null]
+  NXTro: [30.0, 90.0, -180.0, 180.0]
+  SXTro: [-90.0, -30.0, -180.0, 180.0]
+  NTro: [5.0, 30.0, -180.0, 180.0]
+  STro: [-30.0, -5.0, -180.0, 180.0]
+  ITCZ: [-5.0, 5.0, -180.0, 180.0]
+  Tro: [-23.5, 23.5, -180.0, 180.0]
+
+plot_settings:
+  plot_oma: true
+  apply_domains: [global, NXTro]
+  figure_format: png
+  max_time_ticks: 12
+  generate_lat_lon_2d: true
+  latlon_domain: global
+  latlon_lat_bin_width: 10.0
+  latlon_lon_bin_width: 10.0
+  comparison_relative_reduction_statistics: [RMS, STD]
+  generate_time_level_2d: true
+  generate_lat_vert_2d: true
+
+time_settings:
+  start_time: "2024-09-13 06:00:00"
+  end_time: "2024-09-21 12:00:00"
+  interval: 6
+
+# For hofx_forecast (OMF) experiments: the lead hours to plot.
+# forecast:
+#   length: 24
+#   interval: 6
+
+statistics:
+  time_aggregation: pooled  # or "mean" (plain mean of per-cycle statistics)
