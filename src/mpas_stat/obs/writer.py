@@ -139,6 +139,24 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
                         var_out[:] = arr.astype(np.float32)
 
 
+def _experiments_to_write(config: Dict):
+    """Experiments whose diagnosis files are written: experiments.write if
+    given, else all. The other configured experiments are still read, so
+    they shape the common observation sample (statistics.common_sample) --
+    this is how a per-experiment job (scripts/run_verify_obs.ksh) writes
+    only its own experiment's files while matching against the others."""
+    names = config["experiments"]["names"]
+    write = config["experiments"].get("write")
+    if write is None:
+        return set(names)
+    if isinstance(write, str):
+        write = [write]
+    unknown = [w for w in write if w not in names]
+    if unknown:
+        raise ValueError(f"experiments.write lists unknown experiment(s): {unknown}")
+    return set(write)
+
+
 def write_obs_diag_files(results: Dict, config: Dict, diag_obs: str, diag_base_dir: str) -> None:
     """
     Write one observation-space diagnosis netCDF file per (experiment, cycle),
@@ -150,9 +168,13 @@ def write_obs_diag_files(results: Dict, config: Dict, diag_obs: str, diag_base_d
     exp_types = config["experiments"].get("types", ["da"] * len(exp_names))
     plot_oma = config["plot_settings"].get("plot_oma", True)
 
+    write = _experiments_to_write(config)
+
     for iexp, exp_name in enumerate(exp_names):
         if exp_types[iexp] == "hofx_forecast":
             # written separately by write_obs_forecast_diag_files()
+            continue
+        if exp_name not in write:
             continue
 
         diagtypes = ["omb"]
@@ -178,8 +200,12 @@ def write_obs_forecast_diag_files(results: Dict, config: Dict, diag_obs: str, di
     exp_names = config["experiments"]["names"]
     exp_types = config["experiments"].get("types", [])
 
+    write = _experiments_to_write(config)
+
     for iexp, exp_name in enumerate(exp_names):
         if exp_types[iexp] != "hofx_forecast":
+            continue
+        if exp_name not in write:
             continue
 
         for it, init_time in enumerate(results["times"]):

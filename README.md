@@ -96,14 +96,27 @@ python -m mpas_stat.cli.obs_stats examples/obs_verify_example.yaml
 python -m mpas_stat.cli.obs_graphics examples/obs_verify_example.yaml
 ```
 
-`scripts/run_verify_obs.ksh` generates that config from its exported
-settings and runs both stages once for the whole configured cycle range.
+For production runs, use the same layout as model space:
+`scripts/run_verify_obs.ksh` runs the statistics **per experiment and per
+cycle** from the template `configs/obs_input.yaml`, writing to
+`<main_dir>/<exp>/VerifyOBS/<cycle>/obsstat_<obs>.<date>.nc`. Then draw
+figures for all experiments together:
+
+```bash
+python -m mpas_stat.cli.obs_graphics -c configs/obs_graphic.yaml
+```
+
+Each per-experiment job also reads the experiments in `compare_exps`, so
+that all experiments are verified on one common observation sample; it
+writes only its own files.
 
 ### 3. Observation-space forecast skill (OMF)
 
 Use an experiment with `types: [hofx_forecast]` and a `forecast:` block; see
-`examples/obs_forecast_example.yaml`. Then run the same two stages (or
-`scripts/run_verify_obs_fcst.ksh`).
+`examples/obs_forecast_example.yaml`. For production runs,
+`scripts/run_verify_obs_fcst.ksh` loops over initialization cycles and
+forecast hours (like `run_verify_model_fcst.ksh`), writing to
+`<main_dir>/<exp>/VerifyOBS/<init>/f<HHH>/`.
 
 ### 4. Radar composite reflectivity (optional)
 
@@ -121,9 +134,15 @@ experimental until validated on your system. See the user guide, §2.6.
 ```bash
 qsub scripts/run_verify_model.ksh        # cycling model-space stats
 qsub scripts/run_verify_model_fcst.ksh   # extended-forecast model-space stats
-qsub scripts/run_verify_obs.ksh          # OMB/OMA stats + figures
-qsub scripts/run_verify_obs_fcst.ksh     # OMF stats + figures
+qsub scripts/run_verify_obs.ksh          # OMB/OMA stats, per experiment and cycle
+qsub scripts/run_verify_obs_fcst.ksh     # OMF stats, per experiment, cycle and forecast hour
+python -m mpas_stat.cli.model_graphics -c configs/model_graphic.yaml   # model figures
+python -m mpas_stat.cli.obs_graphics -c configs/obs_graphic.yaml       # obs figures
 ```
+
+If your job activates a conda environment, keep the activation inside the
+scripts' "Python environment" section: it relaxes `set -u`, which conda
+activation hooks often trip over (e.g. `GEOMETRIC_DATA_DIR: unbound variable`).
 
 Edit the `export ...` lines at the top of each script for your experiments,
 directories, sensors, and cycle range, and replace the
@@ -174,8 +193,8 @@ Diagnosis-file conventions:
 
 ```
 <base_dir>/<exp>/VerifyModel/<cycle>/mpasstat.<date>.nc
-<diag_dir>/<exp>/VerifyObs/<cycle>/obsstat_<obs>.<date>.nc
-<diag_dir>/<exp>/VerifyObs/<init_cycle>/f<HHH>/obsstat_<obs>.<date>.nc
+<diag_dir>/<exp>/VerifyOBS/<cycle>/obsstat_<obs>.<date>.nc
+<diag_dir>/<exp>/VerifyOBS/<init_cycle>/f<HHH>/obsstat_<obs>.<date>.nc
 ```
 
 ## Documentation

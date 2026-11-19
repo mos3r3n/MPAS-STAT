@@ -462,7 +462,7 @@ def generate_cycles(start_time: datetime, end_time: datetime, interval: timedelt
 
 def resolve_diag_base_dir(config: Dict) -> str:
     """Root directory for obs-space diagnosis netCDF files. One
-    <experiment>/VerifyObs/... subtree is created underneath it per
+    <experiment>/VerifyOBS/... subtree is created underneath it per
     configured experiment -- see obs_diag_file()/obs_diag_forecast_file()
     below."""
     graphics_base_dir = config["paths"].get("graphic_dir", "graphics")
@@ -472,7 +472,7 @@ def resolve_diag_base_dir(config: Dict) -> str:
 # ============================================================================
 # Diagnosis-file path convention
 #
-# <diag_base_dir>/<experiment>/VerifyObs/<cycle>/obsstat_<obs>.<date>.nc
+# <diag_base_dir>/<experiment>/VerifyOBS/<cycle>/obsstat_<obs>.<date>.nc
 #
 # The experiment sits at the TOP of the tree, exactly mirroring MPAS-STAT's
 # own model-space convention (mpas_stat.graphics.io.get_mpasstat_file):
@@ -480,7 +480,7 @@ def resolve_diag_base_dir(config: Dict) -> str:
 # extra "obs type" directory level, since the filename itself
 # (obsstat_<obs>.<date>.nc) already identifies the sensor. Every sensor's
 # files for one (experiment, cycle) pair land side by side in the SAME
-# VerifyObs/<cycle>/ directory, distinguished only by filename -- there is
+# VerifyOBS/<cycle>/ directory, distinguished only by filename -- there is
 # no collision risk (each sensor writes its own obsstat_<obs>.*.nc name).
 # This lets every diagnosis file for one experiment be found/archived/
 # rsynced as a single <diag_base_dir>/<experiment>/ subtree, matching how
@@ -489,8 +489,8 @@ def resolve_diag_base_dir(config: Dict) -> str:
 #
 # NOTE: earlier revisions of this convention put the obs type in its own
 # directory level, either above the experiment
-# (<diag_base_dir>/<obs_type>/<experiment>/VerifyObs/...) or below it
-# (<diag_base_dir>/<experiment>/VerifyObs/<obs_type>/...) -- if migrating an
+# (<diag_base_dir>/<obs_type>/<experiment>/VerifyOBS/...) or below it
+# (<diag_base_dir>/<experiment>/VerifyOBS/<obs_type>/...) -- if migrating an
 # existing diag_dir from either older layout, either re-run
 # src/mpas_stat/obs/diag.py to regenerate files under the current layout, or
 # move files by hand; none of these layouts are compatible with each other
@@ -500,14 +500,14 @@ def obs_diag_file(diag_base_dir: str, exp_name: str, diag_obs: str, cycle_time: 
     cycle = datetime_to_cycle(cycle_time)
     date_file = datetime_to_datefile(cycle_time)
     return os.path.join(
-        diag_base_dir, exp_name, "VerifyObs", cycle,
+        diag_base_dir, exp_name, "VerifyOBS", cycle,
         f"obsstat_{diag_obs}.{date_file}.nc",
     )
 
 # ============================================================================
 # Extended-forecast (OMF, obs-minus-forecast) diagnosis-file path convention
 #
-# <diag_base_dir>/<experiment>/VerifyObs/<init_cycle>/f<HHH>/obsstat_<obs>.<valid_date>.nc
+# <diag_base_dir>/<experiment>/VerifyOBS/<init_cycle>/f<HHH>/obsstat_<obs>.<valid_date>.nc
 #
 # mirrors MPAS-STAT's own extended-forecast model-space convention exactly
 # (mpas_stat.graphics.io.get_mpasstat_forecast_file):
@@ -520,22 +520,22 @@ def obs_diag_forecast_file(diag_base_dir: str, exp_name: str, diag_obs: str, ini
     valid_time = init_time + timedelta(hours=int(lead_hour))
     date_file = datetime_to_datefile(valid_time)
     return os.path.join(
-        diag_base_dir, exp_name, "VerifyObs", init_cycle,
+        diag_base_dir, exp_name, "VerifyOBS", init_cycle,
         f"f{int(lead_hour):03d}",
         f"obsstat_{diag_obs}.{date_file}.nc",
     )
 
 def obs_diag_sensor_has_files(diag_base_dir: str, exp_names: List[str], diag_obs: str) -> bool:
     """True if at least one configured experiment has ANY obsstat_<diag_obs>.*.nc
-    file under its VerifyObs/ subtree -- used by src/mpas_stat/obs/plot.py's
+    file under its VerifyOBS/ subtree -- used by src/mpas_stat/obs/plot.py's
     main() to skip a sensor entirely (with one clear warning) when
     src/mpas_stat/obs/diag.py hasn't been run for it yet. A glob (not a
     directory check) is required because a sensor no longer has its own
     directory level -- every sensor's files for one (experiment, cycle)
-    share the same VerifyObs/<cycle>/ directory, distinguished only by
+    share the same VerifyOBS/<cycle>/ directory, distinguished only by
     filename (see obs_diag_file())."""
     return any(
-        glob.glob(os.path.join(diag_base_dir, exp_name, "VerifyObs", "**",
+        glob.glob(os.path.join(diag_base_dir, exp_name, "VerifyOBS", "**",
                                 f"obsstat_{diag_obs}.*.nc"), recursive=True)
         for exp_name in exp_names
     )
@@ -543,10 +543,10 @@ def obs_diag_sensor_has_files(diag_base_dir: str, exp_names: List[str], diag_obs
 # ============================================================================
 # Radar composite-reflectivity diagnosis-file path convention
 #
-# <diag_base_dir>/<experiment>/VerifyObs/<init_cycle>/f<HHH>/radarstat_<obs>.<valid_date>.nc
+# <diag_base_dir>/<experiment>/VerifyOBS/<init_cycle>/f<HHH>/radarstat_<obs>.<valid_date>.nc
 #
 # Same directory convention as obs_diag_forecast_file() above (one
-# <experiment>/VerifyObs/<init_cycle>/f<HHH>/ subtree per (experiment, init
+# <experiment>/VerifyOBS/<init_cycle>/f<HHH>/ subtree per (experiment, init
 # cycle, lead) triple -- radar composite reflectivity is an OMF-only,
 # extended-forecast product, with no cycling/OMB-OMA counterpart), but with
 # a DISTINCT "radarstat_" filename prefix instead of "obsstat_". This is
@@ -567,7 +567,7 @@ def radar_composite_diag_file(diag_base_dir: str, exp_name: str, diag_obs: str,
     valid_time = init_time + timedelta(hours=int(lead_hour))
     date_file = datetime_to_datefile(valid_time)
     return os.path.join(
-        diag_base_dir, exp_name, "VerifyObs", init_cycle,
+        diag_base_dir, exp_name, "VerifyOBS", init_cycle,
         f"f{int(lead_hour):03d}",
         f"radarstat_{diag_obs}.{date_file}.nc",
     )
@@ -578,7 +578,7 @@ def radar_diag_sensor_has_files(diag_base_dir: str, exp_names: List[str], diag_o
     (with one clear warning) when src/mpas_stat/radar/diag.py hasn't been
     run for it yet."""
     return any(
-        glob.glob(os.path.join(diag_base_dir, exp_name, "VerifyObs", "**",
+        glob.glob(os.path.join(diag_base_dir, exp_name, "VerifyOBS", "**",
                                 f"radarstat_{diag_obs}.*.nc"), recursive=True)
         for exp_name in exp_names
     )

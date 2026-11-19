@@ -1,0 +1,70 @@
+# Observation-space statistics configuration (one cycle per run).
+#
+# The PBS drivers (scripts/run_verify_obs.ksh, scripts/run_verify_obs_fcst.ksh)
+# replace the placeholder values below (mainDir, workDir, expNames, ...,
+# cycleTime) with sed before each run, exactly like configs/model_input.yaml.
+# Statistics files are written to
+#   <mainDir>/<exp>/VerifyOBS/<cycle>/obsstat_<obs>.<date>.nc            (OMB/OMA)
+#   <mainDir>/<exp>/VerifyOBS/<init>/f<HHH>/obsstat_<obs>.<valid>.nc     (OMF)
+# For a manual run, replace the placeholders with real values.
+#
+# Keep `domains` and the statistics-related `plot_settings` (apply_domains,
+# 2-D grid settings) identical to configs/obs_graphic.yaml: every cycle must
+# be computed on the same grid for the figures to combine them.
+
+paths:
+  da_dir: mainDir           # <da_dir>/<exp>/CyclingDA/<cycle>/dbOut/obsout_da_<obs>.h5
+  hofx_dir: mainDir         # <hofx_dir>/<exp>/HofX/<init>/f<HHH>/dbOut/obsout_hofx_<obs>.h5
+  diag_dir: mainDir         # statistics go to <diag_dir>/<exp>/VerifyOBS/
+  graphic_dir: workDir
+
+experiments:
+  # The experiment being verified comes first; any others are compared
+  # experiments, read only so that all experiments are verified on one
+  # common observation sample (statistics.common_sample). Only the
+  # experiments listed in `write` get statistics files.
+  names: expNames
+  types: expTypes           # "da" -> OMB+OMA, "hofx" -> OMB only, "hofx_forecast" -> OMF
+  outerloop: expOuterloop   # analysis outer loop whose OMA is read
+  n_member: expNmember      # >1 -> ensemble spread, OMA in *_ana.h5
+  write: writeExp
+
+sensors: sensorList
+
+domains:
+  global: [null, null, null, null]   # [lat_min, lat_max, lon_min, lon_max]
+  NXTro: [30.0, 90.0, -180.0, 180.0]
+  SXTro: [-90.0, -30.0, -180.0, 180.0]
+  NTro: [5.0, 30.0, -180.0, 180.0]
+  STro: [-30.0, -5.0, -180.0, 180.0]
+  ITCZ: [-5.0, 5.0, -180.0, 180.0]
+  Tro: [-23.5, 23.5, -180.0, 180.0]
+
+plot_settings:
+  plot_oma: true
+  apply_domains: [global, NXTro]
+  generate_lat_lon_2d: true
+  # A named domain (not "auto": per-cycle runs would each pick a different box).
+  latlon_domain: global
+  latlon_lat_bin_width: 10.0
+  latlon_lon_bin_width: 10.0
+  generate_lat_vert_2d: true
+
+time_settings:
+  start_time: "cycleTime"
+  end_time: "cycleTime"
+  interval: cycleInterval
+
+# Extended-forecast (OMF) lead hours handled by this run (hofx_forecast only).
+forecast:
+  start: forecastStart
+  length: forecastLength
+  interval: forecastInterval
+
+# How statistics are computed (docs/USER_GUIDE.md section 5).
+statistics:
+  method: weighted
+  qc_pass_flags: [0, 19]    # 19 = JEDI background check, counted as passed
+  common_sample: true       # one matched observation sample for everything compared
+  spread_ddof: 1
+  spread_finite_ensemble_correction: true

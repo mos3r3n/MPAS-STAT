@@ -9,95 +9,88 @@
 #PBS -k eod
 #PBS -P your_project_id
 #PBS -m ae
-#PBS -l select=1:ncpus=8:mpiprocs=1:mem=64GB
+#PBS -l select=1:ncpus=1:mpiprocs=1:mem=64GB
 
 set -e
 set -u
 set -o pipefail
 
 #####################################
-# Observation-space verification -- OMF (obs-minus-forecast, extended-
-# forecast skill)
+# Observation-space verification -- OMF (extended-forecast skill)
 #
-# Verifies IODA obs-space innovations from EXTENDED-FORECAST HofX runs:
-#   <hofx_dir>/<exp_name>/HofX/<init_cycle>/f<HHH>/dbOut/obsout_hofx_<obs>.h5
-# for every configured forecast lead hour, producing the classic
-# "statistic vs. forecast lead time" skill plots via plot_forecast_lead_0d.
+# Same layout as run_verify_model_fcst.ksh: one job per experiment, one
+# statistics run per (initialization cycle, forecast hour), written into
+# the experiment's own folder:
 #
-# Companion to run_verify_obs.ksh (OMB/OMA, cycling DA) -- the two verify
-# different things (short-range background/analysis fit vs. extended-
-# forecast skill growth) and are normally run as separate jobs, though a
-# single config/job could mix "da"/"hofx" and "hofx_forecast" experiments
-# if desired (src/mpas_stat/obs/diag.py handles both in one pass). Like
-# run_verify_obs.ksh, this script does NOT loop per cycle or per lead hour
-# in the shell -- both python stages sweep the whole cycle range x lead-hour
-# grid internally from a single config file.
+#   input : ${main_dir}/${exp_name}/HofX/<init>/f<HHH>/dbOut/obsout_hofx_<obs>.h5
+#   output: ${main_dir}/${exp_name}/VerifyOBS/<init>/f<HHH>/obsstat_<obs>.<valid>.nc
+#
+# Figures are drawn separately, for all experiments together:
+#   python -m mpas_stat.cli.obs_graphics -c configs/obs_graphic.yaml
+# with exp types "hofx_forecast" and a "forecast:" block in that config.
 #####################################
 
 #####################################
-# Experiment(s) to verify/compare -- space-separated, same length lists.
-# exp_types must be "hofx_forecast" for every entry processed by this job.
+# Experiment
 #####################################
 
-export exp_names="exp_control"
-export exp_labels="Control"
-export exp_types="hofx_forecast"
-export exp_outerloop="0"
-export exp_nmember="1"
+export exp_name=exp_control
 
-#####################################
-# Initialization-cycle range (one HofX forecast is launched per cycle)
-#####################################
+export ini_date=2024091306
+export end_date=2024092112
 
-export start_time="2024-09-13 06:00:00"
-export end_time="2024-09-21 12:00:00"
-export cycle_interval=6
+# Interval between forecast initializations
+export verify_interval=6
 
-#####################################
-# Extended forecast settings (same schema as the model-space graphic.yaml's
-# "forecast:" block / run_verify_model_fcst.ksh's forecast_length/interval)
-#####################################
-
+# --------------------------------------------------
+# Extended forecast settings
+# --------------------------------------------------
 export forecast_length=24
 export forecast_interval=6
-# export forecast_start=6   # optional; defaults to forecast_interval
+
+# Ensemble size of the HofX forecast (>1: ensemble spread)
+export nMember=1
+
+# --------------------------------------------------
+# Experiments to compare against
+#
+# OMF statistics are computed on ONE common observation sample: only
+# observations valid in this experiment AND in every experiment listed
+# here (same init cycle and forecast hour) are used. Their files are only
+# read, never written. Leave empty to verify on this experiment's own sample.
+# --------------------------------------------------
+export compare_exps="exp_test"
 
 #####################################
-# Sensors (see src/mpas_stat/obs/sensor_config.py's OBSERVATION_CONFIGS for valid keys)
+# Sensors
+# (keys of OBSERVATION_CONFIGS in src/mpas_stat/obs/sensor_config.py)
 #####################################
 
 export sensors="sondes aircraft satwind satwnd sfc amsua_n18 amsua_n19"
 
 #####################################
-# Domains to compute/plot (apply_domains)
+# Python environment
+#
+# Conda activation hooks often read variables that are not set yet (e.g.
+# GEOMETRIC_DATA_DIR in geometric_features-activate.sh), which aborts the
+# job under `set -u`. Relax it while activating.
 #####################################
 
-export apply_domains="global NXTro"
-
-#####################################
-# Plot / statistics settings
-#####################################
-
-export figure_format=png
-export generate_lat_lon_2d=true
-export latlon_lat_bin_width=10.0
-export latlon_lon_bin_width=10.0
-# Which `domains` entry (defined below) bounds the 2-D lat-lon map grid --
-# see the matching note in run_verify_obs.ksh. Also applies to OMF's 2-D
-# maps (process_forecast_experiment uses the same resolve_latlon_bounds()).
-export latlon_domain=global
+set +u
+# source /path/to/miniconda3/etc/profile.d/conda.sh
+# conda activate mpas_mesh
+set -u
 
 #####################################
 # Directories
 #####################################
 
 export main_dir=/path/to/regional_mpasjedi
-export da_dir=${main_dir}
-export hofx_dir=${main_dir}
-export graphic_dir=/path/to/verify_obs_fcst
-export diag_dir=""      # blank -> defaults to <graphic_dir>/diag_files
+
 export package_dir=/path/to/MPAS-STAT
 export PYTHONPATH="${package_dir}/src${PYTHONPATH:+:${PYTHONPATH}}"
+
+export working_dir=${main_dir}/${exp_name}/VerifyOBS
 
 #####################################
 # Retry settings
@@ -109,136 +102,181 @@ export retry_delay=30
 ulimit -v unlimited
 
 #####################################
-# Working directory
-#####################################
-
-mkdir -p "${graphic_dir}"
-cd "${graphic_dir}"
-
-#####################################
-# Helpers: space-separated env var -> quoted YAML flow list
+# Helper: space-separated words -> YAML flow list
 #####################################
 
 yaml_list() {
-    # $1 = space-separated tokens; numeric tokens are left unquoted.
-    out="["
-    first=1
+    out=""
     for tok in $1; do
-        if [[ ${first} -eq 0 ]]; then out="${out}, "; fi
-        first=0
-        case "${tok}" in
-            ''|*[!0-9.\-]*) out="${out}\"${tok}\"" ;;   # non-numeric -> quote
-            *)               out="${out}${tok}" ;;       # numeric -> bare
-        esac
+        out="${out:+${out}, }${tok}"
     done
-    out="${out}]"
+    echo "[${out}]"
+}
+
+repeat_list() {
+    # $1 = value, $2 = count -> "value value ..."
+    out=""
+    i=0
+    while [[ ${i} -lt $2 ]]; do
+        out="${out:+${out} }$1"
+        i=$((i + 1))
+    done
     echo "${out}"
 }
 
-#####################################
-# Build the obs-space YAML config (both stages read the same file)
-#####################################
-
-config_file="${graphic_dir}/obs_verify_fcst.yaml"
-
-{
-    echo "paths:"
-    echo "  da_dir: ${da_dir}"
-    echo "  hofx_dir: ${hofx_dir}"
-    echo "  diag_dir: ${diag_dir:-null}"
-    echo "  graphic_dir: ${graphic_dir}"
-    echo
-    echo "experiments:"
-    echo "  names: $(yaml_list "${exp_names}")"
-    echo "  labels: $(yaml_list "${exp_labels}")"
-    echo "  types: $(yaml_list "${exp_types}")"
-    echo "  outerloop: $(yaml_list "${exp_outerloop}")"
-    echo "  n_member: $(yaml_list "${exp_nmember}")"
-    echo
-    echo "sensors: $(yaml_list "${sensors}")"
-    echo
-    echo "domains:"
-    echo "  global: [null, null, null, null]"
-    echo "  NXTro: [30.0, 90.0, -180.0, 180.0]"
-    echo "  SXTro: [-90.0, -30.0, -180.0, 180.0]"
-    echo "  NTro: [5.0, 30.0, -180.0, 180.0]"
-    echo "  STro: [-30.0, -5.0, -180.0, 180.0]"
-    echo "  ITCZ: [-5.0, 5.0, -180.0, 180.0]"
-    echo "  Tro: [-23.5, 23.5, -180.0, 180.0]"
-    echo
-    echo "plot_settings:"
-    echo "  apply_domains: $(yaml_list "${apply_domains}")"
-    echo "  figure_format: ${figure_format}"
-    echo "  generate_lat_lon_2d: ${generate_lat_lon_2d}"
-    echo "  latlon_domain: ${latlon_domain}"
-    echo "  latlon_lat_bin_width: ${latlon_lat_bin_width}"
-    echo "  latlon_lon_bin_width: ${latlon_lon_bin_width}"
-    echo
-    echo "time_settings:"
-    echo "  start_time: \"${start_time}\""
-    echo "  end_time: \"${end_time}\""
-    echo "  interval: ${cycle_interval}"
-    echo
-    echo "forecast:"
-    echo "  length: ${forecast_length}"
-    echo "  interval: ${forecast_interval}"
-    if [[ -n "${forecast_start:-}" ]]; then
-        echo "  start: ${forecast_start}"
-    fi
-} > "${config_file}"
-
-echo "Wrote config: ${config_file}"
+all_exps="${exp_name} ${compare_exps}"
+n_exps=$(echo ${all_exps} | wc -w)
 
 #####################################
-# Run one stage with retry-on-failure (mirrors run_verify_model.ksh)
+# Main cycling loop
 #####################################
 
-run_with_retry() {
-    description=$1
-    shift
+idate=${ini_date}
 
-    attempt=1
-    status=1
+while [[ ${idate} -le ${end_date} ]]; do
 
-    while [[ ${attempt} -le ${max_retries} ]]; do
-        echo "Attempt ${attempt}/${max_retries}: ${description}"
+    echo
+    echo "=================================================="
+    echo "Cycle         : ${idate}"
+    echo "Experiment    : ${exp_name}"
+    echo "Compared with : ${compare_exps:-none}"
+    echo "=================================================="
 
-        if "$@" > "${description}.log" 2>&1; then
-            status=0
-        else
-            status=$?
+    #################################
+    # Cycle date
+    #################################
+
+    YY=$(echo ${idate} | cut -c1-4)
+    MM=$(echo ${idate} | cut -c5-6)
+    DD=$(echo ${idate} | cut -c7-8)
+    HH=$(echo ${idate} | cut -c9-10)
+
+    cycle_time="${YY}-${MM}-${DD} ${HH}:00:00"
+
+    #################################
+    # Forecast-time loop
+    #################################
+
+    forecast_hour=${forecast_interval}
+
+    while [[ ${forecast_hour} -le ${forecast_length} ]]; do
+
+        valid_date=$(date \
+            -d "${YY}-${MM}-${DD} ${HH} + ${forecast_hour} hours" \
+            "+%Y%m%d%H")
+
+        #################################
+        # Working directory
+        #################################
+
+        verify_dir="${working_dir}/${idate}/f$(printf '%03d' ${forecast_hour})"
+
+        mkdir -p "${verify_dir}"
+        cd "${verify_dir}"
+
+        #################################
+        # Information
+        #################################
+
+        echo
+        echo "--------------------------------------------------"
+        echo "Cycle         : ${idate}"
+        echo "Valid time    : ${valid_date}"
+        echo "Forecast hour : ${forecast_hour}"
+        echo "--------------------------------------------------"
+
+        #################################
+        # Configuration
+        #################################
+
+        cp "${package_dir}/configs/obs_input.yaml" input.yaml
+
+        sed -i \
+            -e "s|expNames|$(yaml_list "${all_exps}")|g" \
+            -e "s|expTypes|$(yaml_list "$(repeat_list hofx_forecast ${n_exps})")|g" \
+            -e "s|expOuterloop|$(yaml_list "$(repeat_list 0 ${n_exps})")|g" \
+            -e "s|expNmember|$(yaml_list "$(repeat_list ${nMember} ${n_exps})")|g" \
+            -e "s|writeExp|$(yaml_list "${exp_name}")|g" \
+            -e "s|sensorList|$(yaml_list "${sensors}")|g" \
+            -e "s|mainDir|${main_dir}|g" \
+            -e "s|workDir|${verify_dir}|g" \
+            -e "s|cycleTime|${cycle_time}|g" \
+            -e "s|cycleInterval|${verify_interval}|g" \
+            -e "s|forecastStart|${forecast_hour}|g" \
+            -e "s|forecastLength|${forecast_hour}|g" \
+            -e "s|forecastInterval|${forecast_interval}|g" \
+            input.yaml
+
+        #################################
+        # Run
+        #################################
+
+        attempt=1
+        status=1
+
+        while [[ ${attempt} -le ${max_retries} ]]; do
+
+            echo "Attempt ${attempt}/${max_retries}"
+
+            if python -m mpas_stat.cli.obs_stats -c input.yaml \
+                > verify_obs.log 2>&1; then
+                status=0
+            else
+                status=$?
+            fi
+
+            if [[ ${status} -eq 0 ]]; then
+                echo "SUCCESS"
+                break
+            fi
+
+            echo "WARNING: failed attempt ${attempt}"
+
+            if [[ ${attempt} -lt ${max_retries} ]]; then
+                echo "Retrying in ${retry_delay}s..."
+                sleep ${retry_delay}
+            fi
+
+            ((attempt++))
+
+        done
+
+        #################################
+        # Check
+        #################################
+
+        if [[ ${status} -ne 0 ]]; then
+
+            echo "ERROR: verification failed"
+            echo "Cycle         : ${idate}"
+            echo "Valid time    : ${valid_date}"
+            echo "Forecast hour : ${forecast_hour}"
+            echo "Directory     : ${verify_dir}"
+            echo "Check         : ${verify_dir}/verify_obs.log"
+
+            exit ${status}
+
         fi
 
-        if [[ ${status} -eq 0 ]]; then
-            echo "SUCCESS: ${description}"
-            break
-        fi
+        #################################
+        # Next forecast time
+        #################################
 
-        echo "WARNING: failed attempt ${attempt} for ${description}"
+        forecast_hour=$((forecast_hour + forecast_interval))
 
-        if [[ ${attempt} -lt ${max_retries} ]]; then
-            echo "Retrying in ${retry_delay}s..."
-            sleep ${retry_delay}
-        fi
-
-        ((attempt++))
     done
 
-    if [[ ${status} -ne 0 ]]; then
-        echo "ERROR: ${description} failed after ${max_retries} attempts"
-        echo "Check: ${graphic_dir}/${description}.log"
-        exit ${status}
-    fi
-}
+    #################################
+    # Next cycle
+    #################################
 
-#####################################
-# Run
-#####################################
+    idate=$(date \
+        -d "${YY}-${MM}-${DD} ${HH} + ${verify_interval} hours" \
+        "+%Y%m%d%H")
 
-run_with_retry verify_obs_fcst_stats  python -m mpas_stat.cli.obs_stats "${config_file}"
-run_with_retry verify_obs_fcst_plots  python -m mpas_stat.cli.obs_graphics "${config_file}"
+done
 
 echo
 echo "=================================================="
-echo "Observation-space (OMF extended-forecast) verification completed successfully"
+echo "Verification completed successfully"
 echo "=================================================="

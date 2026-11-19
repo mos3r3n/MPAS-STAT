@@ -465,6 +465,12 @@ def main(config_path: Optional[str] = None) -> None:
     has_cycling = any(t in ("da", "hofx") for t in exp_types)
     has_forecast = "hofx_forecast" in exp_types
 
+    if (config["plot_settings"].get("latlon_domain") == "auto"
+            and config["time_settings"]["start_time"] == config["time_settings"]["end_time"]):
+        print("WARNING: plot_settings.latlon_domain is 'auto' for a single-cycle run: each "
+              "cycle will get its own 2-D grid and the figures cannot combine them. Use a "
+              "named domain (see configs/obs_input.yaml).")
+
     for diag_obs in config["sensors"]:
         # diag_base_dir itself (not a per-sensor subdirectory of it) is
         # passed straight through to write_obs_diag_files() /
