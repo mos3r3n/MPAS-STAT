@@ -238,7 +238,7 @@ def plot_error_consistency_1d(ErrProfiles, profile_key, cfg):
     nvars = len(var_names)
     fig, axs = plt.subplots(2, nvars, figsize=(4.3 * nvars, 9.0), squeeze=False)
     styles = {"ObsErrorAssumed": "-", "ObsErrorDesroziers": "--", "BkgErrorDesroziers": ":"}
-    has_any = False
+    has_any = has_cr = False
 
     for ivar, var_name in enumerate(var_names):
         ax_s, ax_r = axs[0, ivar], axs[1, ivar]
@@ -270,6 +270,7 @@ def plot_error_consistency_1d(ErrProfiles, profile_key, cfg):
             cr = entry.get("ConsistencyRatio")
             if cr is not None and np.any(np.isfinite(cr)):
                 ax_r.plot(cr, y_plot, color=color, linestyle="--", zorder=3)
+                has_cr = True
 
             for ax in (ax_s, ax_r):
                 ax.set_ylabel(y_label)
@@ -302,8 +303,9 @@ def plot_error_consistency_1d(ErrProfiles, profile_key, cfg):
     axs[0, -1].legend(handles=handles, loc="best", fontsize="small")
     ratio_handles = [
         Line2D([0], [0], color="0.3", ls="-", label=r"$\sigma_o$ Desroziers / assumed"),
-        Line2D([0], [0], color="0.3", ls="--", label="TotalSpread / RMS(OMB)"),
     ]
+    if has_cr:   # ensembles only
+        ratio_handles.append(Line2D([0], [0], color="0.3", ls="--", label="TotalSpread / RMS(OMB)"))
     axs[1, -1].legend(handles=ratio_handles, loc="best", fontsize="small")
 
     fig.tight_layout()

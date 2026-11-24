@@ -613,6 +613,7 @@ def process_forecast_experiment(config: Dict, diag_obs: str) -> Dict:
         num_time=len(times), num_var=len(obs_config.variables),
     )
     results.update(_metadata(times, levels, obs_config, domains))
+    results["n_member"] = list(config["experiments"]["n_member"])
     results["leads"] = leads
     results.update(_grid_metadata(grids))
 

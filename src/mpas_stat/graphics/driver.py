@@ -3,6 +3,8 @@
 Each job pairs one collect_* call (reading mpasstat.<date>.nc files) with the
 matching plot_* call; jobs then run sequentially or across a process pool.
 """
+import os
+
 from ..core.jobs import lead_cfg as _lead_cfg
 from ..core.jobs import resolve_n_workers, run_jobs
 from ..core.timeutils import generate_forecast_leads
@@ -311,6 +313,56 @@ def _job_lat_lon_slice_2d(vcfg, stat_name, one_section_cfg):
     )
 
 
+def _files_have_spread(cfg, plot_types, max_files=4):
+    """True if a statistics file of any experiment holds a "spread"
+    variable, False if files exist but none does (deterministic runs),
+    None if no file was found."""
+    import netCDF4 as nc
+
+    from ..core.timeutils import generate_cycles
+    from .ncread import get_mpasstat_file, get_mpasstat_forecast_file
+
+    def has_spread(grp):
+        if "spread" in grp.variables:
+            return True
+        return any(has_spread(g) for g in grp.groups.values())
+
+    try:
+        cycles = generate_cycles(cfg["time"]["start"], cfg["time"]["end"],
+                                 cfg["time"]["interval_hours"])
+    except Exception:
+        return None
+    base = cfg["paths"]["base_dir"]
+    forecast = any(str(t).startswith("forecast_") for t in plot_types)
+    leads = generate_forecast_leads(cfg) if forecast and "forecast" in cfg else []
+    seen = False
+    for exp in cfg["experiments"]["names"]:
+        paths = [get_mpasstat_file(base, exp, c) for c in cycles[:max_files]]
+        paths += [get_mpasstat_forecast_file(base, exp, c, lead)
+                  for c in cycles[:max_files] for lead in leads[:1]]
+        for path in paths:
+            if not os.path.exists(path):
+                continue
+            seen = True
+            with nc.Dataset(path, "r") as ds:
+                if has_spread(ds):
+                    return True
+            break                       # one file per experiment is enough
+    return False if seen else None
+
+
+def _drop_spread_without_ensemble(cfg, stats, plot_types):
+    """Remove "spread" from the statistics to plot when no experiment's
+    statistics files contain it (all experiments deterministic)."""
+    if not any(str(s).lower() == "spread" for s in stats):
+        return stats
+    if _files_have_spread(cfg, plot_types) is False:
+        print("Note: no ensemble spread in the statistics files (n_member = 1); "
+              "skipping the spread figures.")
+        return [s for s in stats if str(s).lower() != "spread"]
+    return stats
+
+
 def run_graphics(cfg):
     """Build every requested figure's collect+plot job, then run them all.
 
@@ -320,7 +372,7 @@ def run_graphics(cfg):
     figures across multiple processes instead.
     """
     plot_types = cfg.get("plot_types", ["time_series_0d", "profiles_1d"])
-    stats = cfg.get("statistics", [])
+    stats = _drop_spread_without_ensemble(cfg, list(cfg.get("statistics", [])), plot_types)
     n_workers = resolve_n_workers(cfg)
 
     jobs = []

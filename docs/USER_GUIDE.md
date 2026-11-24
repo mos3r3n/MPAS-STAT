@@ -1193,6 +1193,17 @@ error, which is not included: a reliable ensemble will look somewhat
 under-dispersive against it. Observation-space `TotalSpread` does include
 the observation error.
 
+A single-member (deterministic) experiment has no spread. Nothing
+spread-related is written or drawn for it:
+- **Observation space:** its statistics files have no `Spread`,
+  `TotalSpread` or `NormDepTotal*`, and none of the ensemble-only
+  diagnostics (rank histograms, spread–skill, consistency ratio).
+- **Spread figures:** time series, profiles and Hovmöllers are drawn only
+  when at least one experiment in the figure is an ensemble, and they show
+  only the ensemble experiments.
+- **Model space:** `spread` in `statistics` is skipped, with a printed note,
+  when none of the experiments' statistics files contain spread.
+
 ### 5.4 Observation space: QC and one common sample
 
 - **QC flags.** `qc_pass_flags` (default `[0, 19]`) applies to every
