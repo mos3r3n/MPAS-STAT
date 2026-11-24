@@ -933,6 +933,18 @@ instead of a native kernel's.
 
 ## 3. Shared conventions & how the two sides connect
 
+**Figure labels** follow NCAR mpas-jedi-graphics conventions, in model and
+observation space alike:
+- **Panel titles:** the variable with plain-text units, e.g. `T (K)`,
+  `U (m/s)`, `Q (g/kg)`, `Ps (Pa)`, `Channel 7 (K)`.
+- **Axis and colour-bar labels:** the statistic, e.g. `rms`, `mean`, `STD`,
+  `Count`, `spread`, `total spread`.
+- **Comparisons:** `rms: % diff. from Control`.
+
+Units come from the variable tables (`mpas_stat/model/variables.py`,
+`mpas_stat/obs/sensor_config.py`). `mpas_stat/graphics/labels.py` converts
+them to this notation.
+
 The observation-space package was built to *reuse* the model-space package
 rather than duplicate it:
 

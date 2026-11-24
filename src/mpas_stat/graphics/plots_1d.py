@@ -7,6 +7,7 @@ import numpy as np
 
 from ..core.bootstrap import get_bootstrap_settings
 from ..core.pooling import entry_difference_ci, entry_value
+from .labels import cfg_var_label, stat_label, pct_diff_label
 from .axes import (
     _apply_latitude_formatter,
     _categorical_positions,
@@ -77,7 +78,7 @@ def plot_profiles_1d(Profiles, profile_key, stat_name, cfg):
             draw_ci(ax, y_plot, prof, ci_low, ci_high, color, cfg,
                     horizontal=True, alpha_default=0.16)
 
-            ax.set_xlabel(stat_name)
+            ax.set_xlabel(stat_label(stat_name))
             ax.set_ylabel(y_label)
             if profile_key == "lat_bin_profile":
                 _apply_latitude_formatter(ax, axis="y")
@@ -87,7 +88,7 @@ def plot_profiles_1d(Profiles, profile_key, stat_name, cfg):
             #if invert_y:
             #    ax.invert_yaxis()
 
-        ax.set_title(_title_with_panel(ivar, var_name))
+        ax.set_title(_title_with_panel(ivar, cfg_var_label(var_name, cfg)))
         _ensure_panel_ticks(ax)
         if ivar == nvars - 1:
             ax.legend()
@@ -174,7 +175,7 @@ def plot_profile_diff_1d(Profiles, profile_key, stat_name, cfg):
                            edgecolors="black", linewidths=0.5, zorder=5)
                 ax.scatter(red[worse], y_plot[worse], color=color, s=36, marker="v",
                            edgecolors="black", linewidths=0.5, zorder=5)
-            ax.set_xlabel(f"{stat_name}: diff. (%) from {exp_labels[0]}")
+            ax.set_xlabel(pct_diff_label(stat_name, exp_labels[0]))
             ax.set_ylabel(y_label)
             if profile_key == "lat_bin_profile":
                 _apply_latitude_formatter(ax, axis="y")
@@ -185,7 +186,7 @@ def plot_profile_diff_1d(Profiles, profile_key, stat_name, cfg):
             has_curve = True
 
         ax.axvline(0.0, color="0.4", linewidth=0.8, linestyle="--")
-        ax.set_title(_title_with_panel(ivar, var_name))
+        ax.set_title(_title_with_panel(ivar, cfg_var_label(var_name, cfg)))
         _ensure_panel_ticks(ax)
 
         #if invert_y:
@@ -283,8 +284,8 @@ def plot_error_consistency_1d(ErrProfiles, profile_key, cfg):
         ax_r.axvline(1.0, color="0.4", linewidth=0.8, linestyle="--", zorder=0)
         ax_s.set_xlabel("error std. dev.")
         ax_r.set_xlabel("ratio")
-        ax_s.set_title(_title_with_panel(ivar, var_name))
-        ax_r.set_title(_title_with_panel(nvars + ivar, var_name))
+        ax_s.set_title(_title_with_panel(ivar, cfg_var_label(var_name, cfg)))
+        ax_r.set_title(_title_with_panel(nvars + ivar, cfg_var_label(var_name, cfg)))
         for ax in (ax_s, ax_r):
             _ensure_panel_ticks(ax)
 

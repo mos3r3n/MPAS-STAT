@@ -5,6 +5,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
+from .labels import cfg_var_label
 from .axes import (
     _apply_latitude_formatter,
     _categorical_positions,
@@ -162,7 +163,7 @@ def plot_time_level_2d(TimeLev, profile_key, stat_name, cfg):
                                 cmap=cmap, norm=norm,
                                 **_pixel_edge_kwargs(cfg))
             _nice_colorbar(fig, ax, pcm, cbar_label, cfg, relative=show_rel, levels=levels)
-            ax.set_title(_title_with_panel(panel_id - 1, f"{exp_labels[iexp]}\u2002{var_name}"))
+            ax.set_title(_title_with_panel(panel_id - 1, f"{exp_labels[iexp]}\u2002{cfg_var_label(var_name, cfg)}"))
             ax.set_ylabel(clabel)
 
             if use_categorical_y:

@@ -363,6 +363,16 @@ def _drop_spread_without_ensemble(cfg, stats, plot_types):
     return stats
 
 
+def _model_units(variables):
+    """{variable: units} from the model-space variable table, for titles."""
+    try:
+        from ..model.variables import _build_mpas_var_map
+        table = _build_mpas_var_map()
+    except Exception:
+        return {}
+    return {v: table[v].get("units") for v in variables if v in table}
+
+
 def run_graphics(cfg):
     """Build every requested figure's collect+plot job, then run them all.
 
@@ -371,6 +381,8 @@ def run_graphics(cfg):
     number of CPU cores to use (e.g. matching a PBS job's ncpus) to render
     figures across multiple processes instead.
     """
+    cfg = dict(cfg)
+    cfg.setdefault("variable_units", _model_units(cfg.get("variables", [])))
     plot_types = cfg.get("plot_types", ["time_series_0d", "profiles_1d"])
     stats = _drop_spread_without_ensemble(cfg, list(cfg.get("statistics", [])), plot_types)
     n_workers = resolve_n_workers(cfg)
