@@ -1,0 +1,63 @@
+# =============================================================================
+# 04  Observation-error tuning with Desroziers diagnostics
+# =============================================================================
+# Estimates the TRUE observation error (and the background error in
+# observation space) from OMB and OMA, compares it with the error the DA
+# used, and exports suggested errors with ready-to-edit UFO filters.
+# Needs a "da" experiment with OMA. Use a long period (>= 2 weeks) and many
+# observations per level.
+#
+#   mpas-stat-obs         04_obs_error_tuning.yaml
+#   mpas-stat-obs-errors  04_obs_error_tuning.yaml   # tables only, no figures
+#   (or mpas-stat-obs-plot for tables + figures)
+#
+# Outputs:
+#   <diag_dir>/<exp>/VerifyOBS/ObsErrorEstimates/desroziers_<sensor>_<cycles>.csv
+#   <diag_dir>/<exp>/VerifyOBS/ObsErrorEstimates/desroziers_<sensor>_<cycles>.yaml
+#   <graphic_dir>/<sensor>/error_consistency_1d/   (ratio < 1: error too large)
+# Iterate: apply, re-run the DA, diagnose again. docs/USER_GUIDE.md section 5.6.
+# =============================================================================
+
+paths:
+  da_dir: /path/to/mpasjedi_runs
+  hofx_dir: /path/to/mpasjedi_runs
+  diag_dir: /path/to/mpasjedi_runs
+  graphic_dir: /path/to/verify_obs/error_tuning
+
+experiments:
+  names: [exp_test]
+  labels: [Test]
+  types: [da]
+  outerloop: [2]
+  n_member: [1]
+
+sensors: [sondes, aircraft, satwind, gnssrorefncep, amsua_n19, amsua_metop-b, mhs_metop-b]
+
+domains:
+  global: [null, null, null, null]
+  NXTro: [30.0, 90.0, -180.0, 180.0]
+  Tro: [-23.5, 23.5, -180.0, 180.0]
+  SXTro: [-90.0, -30.0, -180.0, 180.0]
+
+plot_settings:
+  plot_oma: true
+  apply_domains: [global, NXTro, Tro, SXTro]
+  figure_format: png
+  generate_lat_lon_2d: false
+  generate_time_level_2d: false
+  generate_lat_vert_2d: false
+  generate_error_consistency: true
+  write_error_tables: true
+  error_table_min_count: 500            # levels with fewer obs are left out of the filter
+  scorecard: false
+
+time_settings:
+  start_time: "2024-09-01 00:00:00"
+  end_time: "2024-09-30 18:00:00"
+  interval: 6
+
+statistics:
+  method: weighted
+  qc_pass_flags: [0, 19]
+  common_sample: true
+  error_diagnostics: true

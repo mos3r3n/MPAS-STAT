@@ -155,10 +155,18 @@ def _profile_axis_meta(bin_method):
 
 
 def _ci_display_settings(config):
-    """plot_settings.ci_style / ci_alpha, passed to the shared plot functions
-    (confidence intervals as "shade", "errorbar" or "none")."""
+    """Display settings passed to the shared plot functions:
+    plot_settings.ci_style / ci_alpha (confidence intervals as "shade",
+    "errorbar" or "none"), and the top-level plot_style and colorbar blocks
+    (fonts, colour maps, discrete colour levels -- same keys as the
+    model-space graphic.yaml; either may also sit inside plot_settings)."""
     ps = config.get("plot_settings", {})
-    return {k: ps[k] for k in ("ci_style", "ci_alpha") if k in ps}
+    out = {k: ps[k] for k in ("ci_style", "ci_alpha") if k in ps}
+    for key in ("plot_style", "colorbar"):
+        block = config.get(key, ps.get(key))
+        if block:
+            out[key] = block
+    return out
 
 
 def _base_graphic_cfg(config, out_dir):

@@ -376,7 +376,6 @@ def generate_ensemble_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
 
     cfg = _comparison_graphic_cfg(config, graphic_out_dir, names, labels, colors)
     cfg["variables"] = display_vars
-    cfg["plot_style"] = config.get("plot_style", {})
 
     jobs = []
     for domain in domain_loop:

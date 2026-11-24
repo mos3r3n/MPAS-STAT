@@ -1,0 +1,47 @@
+# =============================================================================
+# 09  Reproduce results from before 2026-11 (legacy statistics)
+# =============================================================================
+# Bit-for-bit the old behaviour: each experiment and OMB/OMA on its own QC'd
+# sample, flag 19 passing only for HofX-derived innovations, spread as the
+# mean of per-observation spread (ddof 0), and cycles combined as a plain
+# mean of per-cycle statistics. No Desroziers or ensemble diagnostics.
+# Use it only to compare with old figures; new work should use "weighted".
+#
+#   mpas-stat-obs       09_legacy_reproduce.yaml
+#   mpas-stat-obs-plot  09_legacy_reproduce.yaml
+# =============================================================================
+
+paths:
+  da_dir: /path/to/mpasjedi_runs
+  hofx_dir: /path/to/mpasjedi_runs
+  diag_dir: /path/to/verify_obs/legacy/diag   # keep legacy files apart
+  graphic_dir: /path/to/verify_obs/legacy
+
+experiments:
+  names: [exp_control, exp_test]
+  labels: [Control, Test]
+  types: [da, da]
+  outerloop: [2, 2]
+  n_member: [1, 1]
+
+sensors: [sondes, aircraft, satwind, amsua_n19]
+
+domains:
+  global: [null, null, null, null]
+  NXTro: [30.0, 90.0, -180.0, 180.0]
+
+plot_settings:
+  plot_oma: true
+  apply_domains: [global, NXTro]
+  figure_format: png
+  generate_lat_lon_2d: true
+  latlon_domain: global
+  scorecard: false
+
+time_settings:
+  start_time: "2024-09-13 06:00:00"
+  end_time: "2024-09-21 12:00:00"
+  interval: 6
+
+statistics:
+  method: legacy                        # every other statistics setting is ignored

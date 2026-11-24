@@ -1,0 +1,36 @@
+# =============================================================================
+# Model space 03  Statistics input: ensemble (mean error + spread)
+# =============================================================================
+# With n_member > 1, forecast_file is a template with a Python format field
+# for the member number. Errors are those of the ensemble mean; spread is
+# written alongside (unbiased variance x (N+1)/N, so spread and RMSE of the
+# mean are directly comparable).
+#
+#   mpas-stat-model -c 03_stats_input_ensemble.yaml
+# =============================================================================
+
+forecast_file: /path/to/enkf/CyclingFC/2024091306/mem{:03d}/mpasout.2024-09-13_12.00.00.nc
+init_file: /path/to/analyses/2024091312/x1.40962.init.2024-09-13_12.00.00.nc
+output_file: /path/to/enkf/VerifyModel/2024091312/mpasstat.2024-09-13_12.00.00.nc
+n_member: 40
+
+variables: [U, V, T, Qv, U10, V10, T2, Ps]
+
+lat_bin_width: 5.0
+lon_bin_width: 5.0
+level_bin_size: 6
+pres_levels: [1000.0, 925.0, 850.0, 700.0, 500.0, 300.0, 250.0, 200.0, 100.0]
+hgt_levels: [500.0, 1000.0, 2000.0, 3000.0, 5000.0, 7000.0, 10000.0, 15000.0]
+
+regions:
+  Global: [-90.0, 90.0]
+  Tropics: [-20.0, 20.0]
+regional: false
+
+statistics_method: weighted
+spread_ddof: 1
+spread_finite_ensemble_correction: true
+
+n_processes: 16              # also used as I/O workers for reading members
+verbose: true
+overwrite: true

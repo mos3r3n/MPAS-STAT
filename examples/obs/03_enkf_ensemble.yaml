@@ -1,0 +1,66 @@
+# =============================================================================
+# 03  Ensemble DA (EnKF / LETKF / GETKF): reliability of the ensemble
+# =============================================================================
+# For n_member > 1 the statistics stage also computes the ensemble spread,
+# total spread (spread + obs error), rank histograms and spread-skill bins.
+# OMA is read from the separate *_ana.h5 file MPAS-JEDI writes for ensembles.
+#
+#   mpas-stat-obs       03_enkf_ensemble.yaml
+#   mpas-stat-obs-plot  03_enkf_ensemble.yaml
+#
+# Look at:
+#   <sensor>/rank_histogram/rank_histogram_<domain>.png     U = too little spread
+#   <sensor>/rank_histogram/rank_histogram_<profile>_<exp>.png   by level
+#   <sensor>/spread_skill/spread_skill_<domain>.png         above 1:1 = too little spread
+#   <sensor>/error_consistency_1d/   TotalSpread / RMS(OMB) (dashed, bottom row)
+# docs/USER_GUIDE.md sections 5.3 and 5.7 explain the diagnostics.
+# =============================================================================
+
+paths:
+  da_dir: /path/to/mpasjedi_runs
+  hofx_dir: /path/to/mpasjedi_runs
+  diag_dir: /path/to/mpasjedi_runs
+  graphic_dir: /path/to/verify_obs/enkf
+
+experiments:
+  names: [letkf_ctrl, letkf_rtps09]     # e.g. two inflation settings
+  labels: [LETKF RTPS 0.7, LETKF RTPS 0.9]
+  types: [da, da]
+  outerloop: [2, 2]                     # OMA group in *_ana.h5 (oman / hofx<N>, else hofx0_mean)
+  n_member: [40, 40]
+
+sensors: [sondes, aircraft, satwind, amsua_n19, amsua_metop-b]
+
+domains:
+  global: [null, null, null, null]
+  NXTro: [30.0, 90.0, -180.0, 180.0]
+  Tro: [-23.5, 23.5, -180.0, 180.0]
+  SXTro: [-90.0, -30.0, -180.0, 180.0]
+
+plot_settings:
+  plot_oma: true
+  apply_domains: [global, NXTro, Tro, SXTro]
+  figure_format: png
+  generate_lat_lon_2d: true
+  latlon_domain: global
+  generate_time_level_2d: true
+  generate_lat_vert_2d: false
+  generate_ensemble_diagnostics: true
+  spread_skill:
+    groups: 10                          # equal-count spread groups per panel
+    min_count: 200                      # drop groups with fewer observations
+  scorecard:
+    statistics: [RMS]
+
+time_settings:
+  start_time: "2024-09-13 00:00:00"
+  end_time: "2024-09-27 18:00:00"
+  interval: 6
+
+statistics:
+  method: weighted
+  common_sample: true
+  spread_ddof: 1                        # unbiased member variance
+  spread_finite_ensemble_correction: true   # x (N+1)/N, comparable with RMS(OMB)
+  ensemble_diagnostics: true
+  rank_histogram_perturb: true          # add obs-error noise to members before ranking

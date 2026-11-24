@@ -1,0 +1,37 @@
+# =============================================================================
+# Model space 06  Figures: ensemble-mean error and spread
+# =============================================================================
+# For statistics written with n_member > 1 (see 03_stats_input_ensemble.yaml).
+# Plot "rms" and "spread" side by side: a well-dispersed ensemble has spread
+# close to the RMSE of the ensemble mean (against an analysis that has its
+# own error, so expect spread slightly below RMSE at short lead times).
+#
+#   mpas-stat-graphics -c 06_graphic_ensemble_spread.yaml
+# =============================================================================
+
+paths:
+  base_dir: /path/to/mpasjedi_runs
+  out_dir: /path/to/verify_model/enkf
+
+figure_format: png
+n_workers: 8
+
+experiments:
+  names: [letkf_rtps07, letkf_rtps09]
+  labels: [RTPS 0.7, RTPS 0.9]
+
+time:
+  start: 2024091300
+  end: 2024092718
+  interval_hours: 6
+
+variables: [U, V, T, Qv]
+statistics: [rms, spread, mean]
+regions: [Global, Tropics]
+relative_reduction_statistics: [rms, spread]
+
+plot_types:
+  - time_series_0d
+  - profiles_1d
+  - profile_diff_1d
+  - time_level_2d
