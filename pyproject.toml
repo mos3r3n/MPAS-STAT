@@ -34,7 +34,7 @@ dependencies = [
 [project.optional-dependencies]
 accelerate = ["numba>=0.55"]
 maps = ["cartopy>=0.20"]
-dev = ["pyflakes>=3.0"]
+dev = ["pyflakes>=3.0", "pytest>=7"]
 
 [project.scripts]
 mpas-stat-model = "mpas_stat.cli.model_stats:main"
