@@ -4,7 +4,8 @@
 # Radiances are binned by latitude (no vertical levels); each channel is a
 # "variable". Useful to monitor bias, departures and error consistency per
 # channel, and to export per-channel Desroziers errors
-# (UFO "error parameter vector").
+# (UFO "error parameter vector") and the inter-channel error-correlation
+# matrix (channel_correlation/ figure; desroziers_R_* tables).
 #
 #   mpas-stat-obs       06_radiance_monitoring.yaml
 #   mpas-stat-obs-plot  06_radiance_monitoring.yaml
@@ -55,6 +56,7 @@ plot_settings:
   generate_lat_vert_2d: false           # not used for radiances
   comparison_relative_reduction_statistics: [RMS, STD]
   generate_error_consistency: true
+  generate_channel_correlations: true
   write_error_tables: true
   scorecard:
     statistics: [RMS, STD]
@@ -68,3 +70,7 @@ statistics:
   method: weighted
   qc_pass_flags: [0, 19]
   common_sample: true
+  channel_correlations: true
+  correlation_channels:                 # default: the channels in sensor_config.py
+    amsua_n19: all
+    amsua_metop-b: all

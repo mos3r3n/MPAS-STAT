@@ -8,6 +8,7 @@ from typing import Dict, Tuple
 import netCDF4 as nc4
 import numpy as np
 
+from .channel_cov import CHANNEL_COV_KEYS
 from .common import (
     ERROR_DIAG_KEYS,
     NORM_DEP_EDGES,
@@ -179,6 +180,25 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
                             stat_disp, "f4", ("nLevels", "nLatBins2D")
                         )
                         var_out[:] = arr.astype(np.float32)
+
+        # ---- channel x channel covariances (radiances, see obs.channel_cov) ----
+        if "chcov_n_omb" in results and "omb" in diagtypes:
+            counts = results["chcov_n_omb"][(iexp, slice(None)) + time_idx]
+            if np.any(counts > 0):
+                chans = np.asarray(results["covariance_channels"], dtype=np.int32)
+                cg = ds.createGroup("channel_covariance")
+                cg.createDimension("nChannels", chans.size)
+                cv = cg.createVariable("Channels", "i4", ("nChannels",))
+                cv[:] = chans
+                cg.description = ("Desroziers channel covariances from OMB/OMA pairs: "
+                                  "ObsErrorCovDesroziers_ij = mean((O-A)_i (O-B)_j), "
+                                  "BkgErrorCovDesroziers_ij = mean((A-B)_i (O-B)_j), "
+                                  "OMBCov_ij = mean((O-B)_i (O-B)_j); PairCount = obs used")
+                for idom, domain in enumerate(domains):
+                    dg = cg.createGroup(domain)
+                    for name, prefix in CHANNEL_COV_KEYS:
+                        v = dg.createVariable(name, "f8", ("nChannels", "nChannels"))
+                        v[:] = results[f"{prefix}_omb"][(iexp, idom) + time_idx]
 
 
 def _experiments_to_write(config: Dict):

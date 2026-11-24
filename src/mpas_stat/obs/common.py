@@ -172,6 +172,11 @@ DEFAULT_CONFIG = {
         # ensembles, by the total spread): RMS / mean per domain and level
         # and histograms (USER_GUIDE 5.8).
         "normalized_departures": True,
+        # Radiances, "da" experiments with OMA: channel x channel
+        # Desroziers covariances (USER_GUIDE 5.9). correlation_channels maps
+        # a sensor to a channel list or "all"; default: its configured channels.
+        "channel_correlations": True,
+        "correlation_channels": {},
     },
 }
 
@@ -187,6 +192,7 @@ _LEGACY_STATISTICS = {
     "ensemble_diagnostics": False,
     "rank_histogram_perturb": False,
     "normalized_departures": False,
+    "channel_correlations": False,
 }
 
 

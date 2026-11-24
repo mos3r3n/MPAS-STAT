@@ -59,6 +59,7 @@ from ..graphics.functions import (
     plot_lat_lon_2d,
     plot_lat_vert_2d,
     plot_profile_reduction_1d,
+    plot_channel_correlation,
     plot_normdep_histogram,
     plot_normdep_profile,
     plot_profiles_1d,
@@ -78,6 +79,7 @@ from .collect import (
     collect_obs_forecast_time_level_2d,
     collect_obs_lat_lon_2d,
     collect_obs_lat_vert_2d,
+    collect_channel_covariance,
     collect_obs_normalized_departures,
     collect_obs_profiles_1d,
     collect_obs_rank_histograms,
@@ -439,6 +441,44 @@ def generate_normdep_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
         jobs.append((plot_normdep_histogram, (data, domain, cfg), {}))
         if profile_key:
             jobs.append((plot_normdep_profile, (data, profile_key, coord_label, cfg), {}))
+    return jobs
+
+
+def channel_correlation_data(config, diag_obs, diag_base_dir, names, domain):
+    """{exp: pooled covariances + symmetrized correlations} for one domain."""
+    from .channel_cov import correlation_from_cov
+    adjusted_start, end_time, interval = resolve_time_settings(config, diag_obs)
+    cycles = generate_cycles(adjusted_start, end_time, interval)
+    out = {}
+    for n in names:
+        d = collect_channel_covariance(diag_base_dir, n, diag_obs, cycles, domain)
+        if not d:
+            continue
+        d["R_sigma"], d["R_corr"], d["min_eig"] = correlation_from_cov(d["R"])
+        d["B_sigma"], d["B_corr"], _ = correlation_from_cov(d["B"])
+        out[n] = d
+    return out
+
+
+def generate_channel_correlation_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
+    """Inter-channel correlation figure per domain (radiances with OMA).
+    Skipped when statistics.channel_correlations or
+    plot_settings.generate_channel_correlations is off."""
+    if get_bin_method(diag_obs) != 3:
+        return []
+    if not resolve_statistics_settings(config).get("channel_correlations"):
+        return []
+    if not config["plot_settings"].get("generate_channel_correlations", True):
+        return []
+    names, labels, colors = _experiments_for_diagtype(config, "oma")
+    if not names:
+        return []
+    cfg = _comparison_graphic_cfg(config, graphic_out_dir, names, labels, colors)
+    jobs = []
+    for domain in resolve_domains(config):
+        data = channel_correlation_data(config, diag_obs, diag_base_dir, names, domain)
+        if data:
+            jobs.append((plot_channel_correlation, (data, diag_obs, domain, cfg), {}))
     return jobs
 
 
@@ -862,6 +902,7 @@ def generate_plots(config, diag_obs, graphic_out_dir, diag_base_dir):
     jobs += generate_forecast_lead_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
     jobs += generate_ensemble_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
     jobs += generate_normdep_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
+    jobs += generate_channel_correlation_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
 
     if diag_obs.startswith("sfc"):
         return jobs

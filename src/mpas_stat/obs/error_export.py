@@ -30,7 +30,12 @@ import os
 import numpy as np
 
 from ..core.timeutils import datetime_to_cycle
-from .collect import collect_obs_error_profiles, collect_obs_error_totals
+from .channel_cov import correlation_from_cov
+from .collect import (
+    collect_channel_covariance,
+    collect_obs_error_profiles,
+    collect_obs_error_totals,
+)
 from .common import (
     generate_cycles,
     load_config,
@@ -220,6 +225,42 @@ def _write_yaml(path, rows, diag_obs, exp_name, cycles, min_count):
         f.write("\n".join(lines) + "\n")
 
 
+def _write_channel_matrix(base, cov, diag_obs, exp_name, cycles):
+    """desroziers_R_<sensor>_<cycles>.{csv,yaml}: the global-domain
+    Desroziers observation-error covariance between channels (symmetrized),
+    as standard deviations and a correlation matrix, in IODA units (K)."""
+    sigma, corr, min_eig = correlation_from_cov(cov["R"])
+    ch = [int(c) for c in cov["channels"]]
+    with open(base + ".csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["channel", "sigma"] + [f"corr_ch{c}" for c in ch])
+        for i, c in enumerate(ch):
+            w.writerow([c, _yaml_num(_f(sigma[i]))] + [_yaml_num(_f(x)) for x in corr[i]])
+    pairs = np.asarray(cov["count"])
+    lines = [
+        "# Desroziers inter-channel observation-error estimate (global domain),",
+        "# written by MPAS-STAT:  R_ij ~ mean[(O-A)_i (O-B)_j], symmetrized.",
+        f"# experiment: {exp_name}   sensor: {diag_obs}   cycles: "
+        f"{datetime_to_cycle(cycles[0])}-{datetime_to_cycle(cycles[-1])} "
+        f"({cov['n_cycles']} with data)",
+        "# R = diag(sigma) * correlation * diag(sigma).",
+        "# A negative min_eigenvalue means the estimate is not a valid covariance",
+        "# (sampling noise or sub-optimal analysis): regularize before use.",
+        "# Exact only for an optimal analysis; iterate. Not in a UFO-specific",
+        "# file format: convert to what your obs-error covariance model reads.",
+        f"sensor: {diag_obs}",
+        f"experiment: {exp_name}",
+        f"channels: [{', '.join(str(c) for c in ch)}]",
+        f"sigma: {_yaml_list([_f(s) for s in sigma])}",
+        f"min_eigenvalue: {_yaml_num(_f(min_eig))}",
+        f"min_pair_count: {int(pairs.min()) if pairs.size else 0}",
+        "correlation:",
+    ] + [f"  - {_yaml_list([_f(x) for x in row])}" for row in corr]
+    with open(base + ".yaml", "w") as f:
+        f.write("\n".join(lines) + "\n")
+    return [base + ".csv", base + ".yaml"]
+
+
 def export_error_estimates(config, diag_obs, diag_base_dir):
     """Write the CSV and YAML tables for one sensor, for every "da"
     experiment that has OMA. Returns the list of files written."""
@@ -244,6 +285,12 @@ def export_error_estimates(config, diag_obs, diag_base_dir):
         _write_csv(base + ".csv", rows)
         _write_yaml(base + ".yaml", rows, diag_obs, exp, cycles, min_count)
         written += [base + ".csv", base + ".yaml"]
+        if get_bin_method(diag_obs) == 3 and settings.get("channel_correlations"):
+            cov = collect_channel_covariance(diag_base_dir, exp, diag_obs, cycles, "global")
+            if cov:
+                written += _write_channel_matrix(
+                    os.path.join(out_dir, f"desroziers_R_{diag_obs}_{tag}"), cov, diag_obs,
+                    exp, cycles)
     return written
 
 

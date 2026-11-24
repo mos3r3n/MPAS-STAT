@@ -40,6 +40,7 @@ from .plots_1d import (
     plot_profile_reduction_1d,
     plot_profiles_1d,
 )
+from .plots_matrix import plot_channel_correlation
 from .plots_normdep import (
     plot_normdep_histogram,
     plot_normdep_profile,
@@ -76,6 +77,7 @@ from .style import (
 
 __all__ = [
     "plot_error_consistency_1d",
+    "plot_channel_correlation",
     "plot_normdep_histogram",
     "plot_normdep_profile",
     "plot_rank_histogram",
