@@ -234,9 +234,9 @@ obs-space statistics -> diagnosis file -> collector round trip. They need `numpy
 - Experiment-vs-control figures (2-D comparison panels, profile and
   lead-time difference plots, scorecard) show the percent **difference**
   `100 × (exp − ref) / ref`: **negative = lower RMS/STD than the control
-  (improvement, ▲, blue)**, positive = degradation (▼, red). The OMB→OMA
-  figures are labelled "reduction (%)" and keep `100 × (OMB − OMA) / OMB`
-  (positive = the analysis improved on the background).
+  (improvement, ▲, blue)**, positive = degradation (▼, red). Background
+  (O−B) is compared only with background and analysis (O−A) only with
+  analysis, in separate figures.
 - Percent differences are suppressed when the reference value is below the
   configured `relative_min_reference` threshold (and a separate, larger
   threshold for water vapour).

@@ -51,7 +51,7 @@ the native model grid, binned by lat/lon/level.
 | `scripts/run_verify_model_fcst.ksh` | Same, for extended-forecast verification (writes to `f<HHH>/` subfolders) |
 | `src/mpas_stat/cli/model_graphics.py` | Graphics entry point: `python -m mpas_stat.cli.model_graphics -c configs/model_graphic.yaml` |
 | `src/mpas_stat/graphics/io.py` | Facade re-exporting cycle/date helpers (`core/timeutils.py`), bootstrap CI helpers (`core/bootstrap.py`), netCDF/path helpers (`graphics/ncread.py`) and the `collect_*` functions (`graphics/collect.py` for cycling, `graphics/collect_forecast.py` for extended forecasts) that read `mpasstat.<date>.nc` files back into plotting-ready Python dicts |
-| `src/mpas_stat/graphics/functions.py` | Facade re-exporting every plotting function and helper, now implemented in `style.py` (publication style, `_save_fig`), `axes.py`, `panels.py` (shared 2-D panel builder, colour maps, significance), `plots_0d.py`, `plots_1d.py`, `plots_2d.py` and `scorecard.py`. Contents: | All plotting functions (`plot_time_series_0d`, `plot_profiles_1d`, `plot_lat_lon_2d`, `plot_lat_vert_2d`, `plot_time_level_2d`, the `forecast_*` and scorecard variants, plus `plot_time_series_reduction_0d`/`plot_profile_reduction_1d` — added for the obs-space OMB→OMA RMS-reduction-percent figures, §2.4) plus shared styling/colorbar/significance helpers |
+| `src/mpas_stat/graphics/functions.py` | Facade re-exporting every plotting function and helper, now implemented in `style.py` (publication style, `_save_fig`), `axes.py`, `panels.py` (shared 2-D panel builder, colour maps, significance), `plots_0d.py`, `plots_1d.py`, `plots_2d.py` and `scorecard.py`. Contents: | All plotting functions (`plot_time_series_0d`, `plot_profiles_1d`, `plot_lat_lon_2d`, `plot_lat_vert_2d`, `plot_time_level_2d`, the `forecast_*` and scorecard variants) plus shared styling/colorbar/significance helpers |
 | `src/mpas_stat/graphics/driver.py` | `run_graphics(cfg)` — dispatches over `cfg["plot_types"]`, optionally in parallel (`n_workers`) |
 | `configs/model_graphic.yaml` | Graphics-stage configuration template (see below) |
 
@@ -649,9 +649,7 @@ Domain boxes (`domains`, and
 | Statistic product | Function used to plot it | Notes |
 |---|---|---|
 | Domain-averaged time series | `plot_time_series_0d` | OMB/OMA only, one figure per (domain, statistic); OMB solid, OMA dashed |
-| **RMS reduction (%) time series** | `plot_time_series_reduction_0d` | OMB/OMA only ("da"-typed experiments with an OMA). The SAME per-cycle RMS numbers as the time series above, plotted as a single derived `100*(RMS_omb-RMS_oma)/RMS_omb` line per experiment instead of two absolute ones — positive means the analysis improved on the background. One figure per domain, in its own `time_series_diff_0d/` folder (`time_series_RMS_reduction_pct_<region>.png`). No bootstrap significance (a 0-D time series has only the already-aggregated statistic per cycle, not per-observation samples) — see the function's own docstring. |
 | Vertical/latitude binned profile | `plot_profiles_1d` | OMB/OMA only. Pressure bins (conventional), height bins (GNSS-RO/radar), or latitude bins (radiances) — whichever applies to that sensor |
-| **RMS reduction (%) profile** — analysis vs. background *within* each experiment | `plot_profile_reduction_1d` | OMB/OMA only. Not an experiment comparison: the profile counterpart of the RMS reduction time series above — `100*(RMS_omb-RMS_oma)/RMS_omb` vs. level, one line per experiment, in its own `profile_reduction_1d/` folder (`profile_<profile_key>_RMS_reduction_pct.png`). Also no bootstrap significance, for the same reason. |
 | **Experiment vs. control profile** | `plot_profile_diff_1d` | % difference `100*(exp-ref)/ref` of the pooled RMS/STD (`plot_settings.comparison_relative_reduction_statistics`) from `experiments.names[0]`, per level, with the paired-bootstrap interval (`ci_style`) and ▲/▼ where it is significant. **O−B is compared only with O−B and O−A only with O−A**, in separate figures: `omb/profile_diff_1d/` and `oma/profile_diff_1d/` (`profile_<profile_key>_<stat>.png`). A smaller O−A only means a closer fit to the observations, not necessarily a better analysis; judge experiments mainly on O−B (and OMF). |
 | Lat-lon gridded map | `plot_lat_lon_2d` | OMB/OMA only, as two separate sets of figures. Computed over `plot_settings.latlon_domain`'s box (default: globally; not per `apply_domains`). Real-experiment comparison convention (reference + % difference) — see the callout in §2.3 |
 | Lev-time (cycle x level) Hovmoller | `plot_time_level_2d` | OMB/OMA only, as two separate sets of figures, one per (domain, statistic). Reuses the existing 1D profile data, cycle-resolved. Real-experiment comparison convention, no bootstrap (each column is one cycle) — see the callout in §2.3 |
@@ -1044,15 +1042,12 @@ rather than duplicate it:
   figure (2-D comparison panels, `profile_diff_1d`,
   `forecast_lead_diff_0d`, `forecast_scorecard`) uses this sign:
   **negative = lower RMS/STD than the control = improvement**, drawn with
-  an upward triangle (▲) and in blue; positive = degradation (▼, red). The
-  OMB→OMA "RMS reduction (%)" figures keep `100*(OMB-OMA)/OMB`, positive =
-  the analysis improved on the background, as their labels say.
-- Obs-space profiles (1D) and the lev-time Hovmoller are plain time
-  averages / cycle-resolved values — no bootstrap confidence-interval
-  shading (the model side's `profile_diff_1d` adds that; obs-space
-  intentionally does not use it there). The lat-lon map and lev-lat
-  cross-section DO use bootstrap CI/significance, via the real-experiment
-  comparison convention (§2.3).
+  an upward triangle (▲) and in blue; positive = degradation (▼, red).
+- Obs-space absolute profiles (1D) and the lev-time Hovmoller are plain
+  time averages / cycle-resolved values without confidence intervals. The
+  experiment-vs-control profiles (`omb/` and `oma/profile_diff_1d/`), the
+  lat-lon map and the lev-lat cross-section use bootstrap CI/significance,
+  via the real-experiment comparison convention (§2.3).
 - OMF (`hofx_forecast` experiments) now has its own forecast-lead
   counterpart of every OMB/OMA product — profile, lat-lon map, lev-lat
   cross-section, and lev-time Hovmoller — in addition to the domain-averaged
