@@ -16,6 +16,7 @@ from .axes import (
     _set_compact_time_axis,
 )
 from .colour import colour_scale, share_limits
+from .extent import apply_extent, extent_mode, finite_extent, lon_extent_center, store_extent
 from .panels import (
     _colorbar_extend,
     _colourmap_settings,
@@ -52,6 +53,28 @@ def _time_level_panel_data(data, ref_data, show_rel, var_name, cfg):
     return plot_data
 
 
+def _map_spans(store, cfg):
+    """(lat_span, lon_span) to show on a lat-lon map: the configured box,
+    the finite data (auto), or (None, None) for the full grid."""
+    mode = extent_mode(cfg)
+    if mode == "full":
+        return None, None
+    if isinstance(mode, list):
+        return (mode[0], mode[1]), (mode[2], mode[3])
+    ext = store_extent(store, "lon", "lat", transpose=False, lon_axis="x")
+    if ext is None:
+        return None, None
+    return ext[1], ext[0]
+
+
+def _latitude_rows_span(spans, coord, data_t):
+    """Accumulate the latitude span of the finite rows of data_t
+    (shape (len(coord), n))."""
+    ext = finite_extent(np.arange(np.asarray(data_t).shape[1]), coord, data_t)
+    if ext:
+        spans.append(ext[1])
+
+
 def plot_time_level_2d(TimeLev, profile_key, stat_name, cfg):
     """Time × level cross-section.
 
@@ -60,6 +83,7 @@ def plot_time_level_2d(TimeLev, profile_key, stat_name, cfg):
     Note: no bootstrap significance here; each x-point is a single cycle.
     """
     apply_pub_style(cfg)
+    lat_spans = []
     var_names = cfg["variables"]
     out_dir   = _section_out_dir(cfg, "time_level_2d")
 
@@ -132,6 +156,8 @@ def plot_time_level_2d(TimeLev, profile_key, stat_name, cfg):
                 extend=_colorbar_extend(cfg, show_rel),
                 data_arrays=row_data[show_rel] if share_limits(cfg) else [plot_data],
             )
+            if clabel == "Latitude":
+                _latitude_rows_span(lat_spans, levs, plot_data.T)
             pcm = ax.pcolormesh(x, y_plot, plot_data.T, shading="auto", rasterized=True,
                                 cmap=cmap, norm=norm,
                                 **_pixel_edge_kwargs(cfg))
@@ -149,6 +175,10 @@ def plot_time_level_2d(TimeLev, profile_key, stat_name, cfg):
 
             _set_compact_time_axis(ax, x, times, cfg, xlabel="Time")
 
+    if lat_spans and extent_mode(cfg) != "full":
+        box = extent_mode(cfg)
+        apply_extent(axs, lat_span=(box[0], box[1]) if isinstance(box, list) else
+                     (min(s[0] for s in lat_spans), max(s[1] for s in lat_spans)))
     fig.tight_layout()
     figname=f"cross_section_time_{profile_key}_{stat_name}"
     _save_fig(fig, os.path.join(out_dir, figname), cfg)
@@ -188,6 +218,12 @@ def plot_forecast_time_level_2d(TimeLev, profile_key, stat_name, cfg):
         x_axis_label="Forecast lead time (h)",
         mean_cbar_limits=mean_cbar_limits,
     )
+    first = next((e for pv in TimeLev.values() for e in (pv or {}).values() if e), None)
+    if first and first.get("coord_label") == "Latitude" and extent_mode(cfg) != "full":
+        box = extent_mode(cfg)
+        lat_span = (box[0], box[1]) if isinstance(box, list) else (
+            (store_extent(TimeLev, "leads", "coord", transpose=True) or (None, None))[1])
+        apply_extent(axs, lat_span=lat_span)
 
     fig.tight_layout()
     figname = f"forecast_cross_section_lead_{profile_key}_{stat_name}"
@@ -225,6 +261,11 @@ def plot_lat_vert_2d(LatVert, section_key, stat_name, cfg):
         x_axis_label="Latitude",
         mean_cbar_limits=mean_cbar_limits,
     )
+    if extent_mode(cfg) != "full":
+        box = extent_mode(cfg)
+        lat_span = (box[0], box[1]) if isinstance(box, list) else (
+            (store_extent(LatVert, "lat", "vert", transpose=True) or (None, None))[0])
+        apply_extent(axs, lat_span=lat_span, lat_axis="x")
 
     fig.tight_layout()
     figname=f"cross_section_latitude_{section_key}_{stat_name}"
@@ -238,7 +279,8 @@ def plot_lat_lon_2d(LatLon, stat_name, cfg):
     Uses Cartopy if available, otherwise plain pcolormesh.
     """
     apply_pub_style(cfg)
-    projection, cartopy_info = _latlon_projection_info()
+    lat_span, lon_span = _map_spans(LatLon, cfg)
+    projection, cartopy_info = _latlon_projection_info(lon_extent_center(lon_span))
 
     var_names = cfg["variables"]
     out_dir   = _section_out_dir(cfg, "lat_lon_2d")
@@ -270,6 +312,7 @@ def plot_lat_lon_2d(LatLon, stat_name, cfg):
         cartopy_info=cartopy_info,
         mean_cbar_limits=mean_cbar_limits,
     )
+    apply_extent(axs, lat_span, lon_span, cartopy_info)
 
     fig.tight_layout()
     figname=f"lat_lon_{stat_name}"
@@ -301,7 +344,8 @@ def plot_lat_lon_slice_2d(LatLonLev, stat_name, cfg, section_cfg):
     percent difference from the reference, with bootstrap significance triangles.
     """
     apply_pub_style(cfg)
-    projection, cartopy_info = _latlon_projection_info()
+    lat_span, lon_span = _map_spans(LatLonLev, cfg)
+    projection, cartopy_info = _latlon_projection_info(lon_extent_center(lon_span))
 
     var_names = cfg["variables"]
     out_dir   = _section_out_dir(cfg, "lat_lon_2d")
@@ -333,6 +377,7 @@ def plot_lat_lon_slice_2d(LatLonLev, stat_name, cfg, section_cfg):
         cartopy_info=cartopy_info,
         mean_cbar_limits=mean_cbar_limits,
     )
+    apply_extent(axs, lat_span, lon_span, cartopy_info)
 
     # Add selected level in the figure title if available.
     first_entry = None

@@ -56,6 +56,7 @@ plot_settings:
   latlon_domain: global
   latlon_lat_bin_width: 10.0
   latlon_lon_bin_width: 10.0
+  map_extent: auto          # maps / latitude axes: auto (zoom to data) | full | [lat0, lat1, lon0, lon1]
   comparison_relative_reduction_statistics: [RMS, STD]
   ci_style: shade           # confidence intervals: shade | errorbar | none
   # palette: [black, "#d95f02", "#7570b3", "#1b9e77"]   # line colours (default: CVD-safe)

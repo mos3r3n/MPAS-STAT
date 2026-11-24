@@ -115,6 +115,7 @@ temperature (before 2026-11, `Tv` mistakenly returned potential temperature).
 | `plot_style.diverging_cmap`, `plot_style.absolute_cmap` | Colour maps for % differences / mean fields (default `RdBu_r`; `RdYlBu_r` is a good alternative) and for absolute statistics (default `YlGnBu`) |
 | `plot_style.palette` | Experiment line colours when `experiments.colors` is not given. Default: black, then ColorBrewer Dark2 (colour-vision-deficiency safe). Obs space: `plot_settings.palette`. |
 | `ci_style` | Bootstrap confidence intervals on line/profile plots: `shade` (coloured band, default), `errorbar`, or `none`. `ci_alpha` sets the band opacity. (Older `profile_ci_style` / `profile_errorbar: false` still work.) |
+| `map_extent` | Area shown by lat-lon maps and latitude axes (lat-vert cross-sections, latitude-binned Hovmöllers): `auto` (default) zooms to the cells that hold data in any panel of the figure, so a regional mesh or sub-domain fills the frame; `full` shows the whole grid; `[lat_min, lat_max, lon_min, lon_max]` fixes a box. A region crossing the dateline is drawn in one piece (map centred on 180°). Obs space: `plot_settings.map_extent`. |
 
 ### 1.5 Available `plot_types` (model-space)
 
@@ -292,6 +293,8 @@ plot_settings:
                                                   # (fixed hand-specified box), or "auto" (detect the
                                                   # box from valid-statistics extent) -- see note below
   latlon_lat_bin_width: 10.0                   # 2-D map grid resolution (degrees)
+  map_extent: auto                             # area drawn: auto (zoom to data) | full |
+                                                  # [lat_min, lat_max, lon_min, lon_max]
   latlon_lon_bin_width: 10.0
   generate_time_level_2d: true                 # cycle x level Hovmoller -- see the comparison-
                                                   # convention callout below

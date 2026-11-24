@@ -46,6 +46,7 @@ plot_settings:
   latlon_domain: mesh                   # a key of `domains`, or "global" / "auto"
   latlon_lat_bin_width: 2.0             # finer than the global default (10)
   latlon_lon_bin_width: 2.0
+  map_extent: auto                      # zoom maps / latitude axes to the data (default)
   generate_time_level_2d: true
   generate_lat_vert_2d: true
   scorecard:

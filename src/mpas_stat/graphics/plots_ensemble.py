@@ -22,6 +22,7 @@ from .axes import (
     _set_categorical_axis,
 )
 from .colour import colorbar_ticks, colour_scale
+from .extent import apply_extent, extent_mode, finite_extent
 from .style import (
     _save_fig,
     _section_out_dir,
@@ -169,6 +170,9 @@ def plot_rank_histogram_levels(RankData, exp_name, profile_key, coord_label, cfg
             ax.set_ylim(y_edges[0], y_edges[-1])   # first bin (surface) at the bottom
         if latitude:
             _apply_latitude_formatter(ax, axis="y")
+            ext = finite_extent(np.arange(n), coord, ratio)
+            if ext and extent_mode(cfg) != "full":
+                apply_extent([ax], lat_span=ext[1])
     if pcm is not None:
         cb = fig.colorbar(pcm, ax=list(axs.flat[:len(var_names)]), shrink=0.85,
                           ticks=colorbar_ticks(levels) if levels is not None else None)

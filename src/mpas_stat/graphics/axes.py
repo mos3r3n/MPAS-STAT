@@ -194,12 +194,14 @@ def _adaptive_geo_locator(values):
     return mticker.MultipleLocator(step)
 
 
-def _latlon_projection_info():
-    """Return Cartopy projection and lat-lon plotting metadata if available."""
+def _latlon_projection_info(central_longitude=0.0):
+    """Return Cartopy projection and lat-lon plotting metadata if available.
+    central_longitude 180 keeps a region that crosses the dateline in one
+    piece (data are always given in plain PlateCarree coordinates)."""
     try:
         import cartopy.crs as ccrs
         import cartopy.feature as cfeature
-        projection = ccrs.PlateCarree()
+        projection = ccrs.PlateCarree(central_longitude=central_longitude)
         cartopy_info = {
             "has_cartopy": True,
             "transform":   ccrs.PlateCarree(),

@@ -770,6 +770,104 @@ class TestChannelCovariance(unittest.TestCase):
         self._check(ensemble=True)
 
 
+class TestPlotExtent(unittest.TestCase):
+    """Maps and latitude axes zoom to where the data are."""
+
+    def test_finite_extent_and_dateline(self):
+        from mpas_stat.graphics.extent import finite_extent, lon_extent_center, store_extent
+        lat = np.arange(-85.0, 90.0, 10.0)
+        lon = np.arange(-175.0, 180.0, 10.0)
+        d = np.full((lat.size, lon.size), np.nan)
+        d[(lat > 0) & (lat < 30), :][:, :] = np.nan
+        d[np.ix_((lat > 0) & (lat < 30), (lon > 85) & (lon < 155))] = 1.0
+        (x0, x1), (y0, y1) = finite_extent(lon, lat, d, lon_axis="x")
+        self.assertEqual((x0, x1, y0, y1), (90.0, 150.0, 0.0, 30.0))
+        # a box across the dateline: 160E..160W
+        d2 = np.full_like(d, np.nan)
+        d2[np.ix_((lat > 0) & (lat < 30), (lon > 155) | (lon < -155))] = 1.0
+        (x0, x1), _ = finite_extent(lon, lat, d2, lon_axis="x")
+        self.assertEqual((x0, x1), (160.0, 200.0))
+        self.assertEqual(lon_extent_center((x0, x1)), 180.0)
+        store = {"a": {"T": {"data": d, "lon": lon, "lat": lat}},
+                 "b": {"T": {"data": d2, "lon": lon, "lat": lat}}}
+        (sx0, sx1), _ = store_extent(store, "lon", "lat")
+        self.assertEqual((sx0, sx1), (-180.0, 180.0))     # plain union, no dateline wrap
+        self.assertIsNone(finite_extent(lon, lat, np.full_like(d, np.nan)))
+
+    def test_extent_modes(self):
+        from mpas_stat.graphics.extent import extent_mode
+        self.assertEqual(extent_mode({}), "auto")
+        self.assertEqual(extent_mode({"map_extent": "full"}), "full")
+        self.assertEqual(extent_mode({"map_extent": [0, 30, 90, 150]}), [0.0, 30.0, 90.0, 150.0])
+
+    def test_regional_figures_zoom(self):
+        """Obs only in 0-30N, 90-150E: lat-lon map and lat-vert cross-section
+        are drawn over that box, not the globe."""
+        import matplotlib.pyplot as plt
+        from mpas_stat.graphics import plots_2d
+        from mpas_stat.obs.common import load_config
+        from mpas_stat.obs.figures import generate_lat_lon_graphics, generate_lat_vert_graphics
+        from mpas_stat.obs.process import process_experiment
+        from mpas_stat.obs.writer import write_obs_diag_files
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp)
+        rng = np.random.default_rng(0)
+        n = 3000
+        for exp in ("ctl", "tst"):
+            for c in ("2024091300", "2024091306"):
+                db = os.path.join(tmp, exp, "CyclingDA", c, "dbOut")
+                os.makedirs(db)
+                crng = np.random.default_rng(int(c))
+                with h5py.File(os.path.join(db, "obsout_da_aircraft.h5"), "w") as f:
+                    md = f.create_group("MetaData")
+                    md["latitude"], md["longitude"] = crng.uniform(0, 30, n), crng.uniform(90, 150, n)
+                    md["pressure"] = crng.uniform(2e4, 1e5, n)
+                    for v in ("windEastward", "windNorthward", "airTemperature"):
+                        f.require_group("ombg")[v] = rng.standard_normal(n)
+                        f.require_group("oman")[v] = 0.5 * rng.standard_normal(n)
+                        f.require_group("ObsValue")[v] = np.zeros(n)
+                        for q in ("EffectiveQC0", "EffectiveQC2"):
+                            f.require_group(q)[v] = np.zeros(n, "i4")
+        cfg_path = os.path.join(tmp, "cfg.yaml")
+        Path(cfg_path).write_text(
+            f"paths: {{da_dir: {tmp}, hofx_dir: {tmp}, diag_dir: {tmp}, graphic_dir: {tmp}/fig}}\n"
+            "experiments: {names: [ctl, tst], types: [da, da], outerloop: [2, 2], n_member: [1, 1]}\n"
+            "sensors: [aircraft]\ndomains: {global: [null, null, null, null]}\n"
+            "plot_settings: {apply_domains: [global], latlon_domain: global}\n"
+            "time_settings: {start_time: '2024-09-13 00:00:00', end_time: '2024-09-13 06:00:00', interval: 6}\n"
+            "bootstrap: {n_boot: 50}\n")
+        config = load_config(cfg_path)
+        write_obs_diag_files(process_experiment(config, "aircraft"), config, "aircraft", tmp)
+        captured = []
+        orig = plots_2d._save_fig
+        plots_2d._save_fig = lambda fig, path, cfg=None: (captured.append(fig), plt.close(fig))
+        self.addCleanup(setattr, plots_2d, "_save_fig", orig)
+        for gen in (generate_lat_lon_graphics, generate_lat_vert_graphics):
+            jobs = gen(config, "aircraft", os.path.join(tmp, "fig"), tmp)
+            func, args, kw = jobs[0]
+            func(*args, **kw)
+        map_ax, vert_ax = captured[0].axes[0], captured[1].axes[0]
+        if hasattr(map_ax, "get_extent"):                      # Cartopy installed
+            import cartopy.crs as ccrs
+            x0, x1, y0, y1 = map_ax.get_extent(ccrs.PlateCarree())
+        else:
+            (x0, x1), (y0, y1) = map_ax.get_xlim(), map_ax.get_ylim()
+        self.assertGreater(x0, 80.0)
+        self.assertLess(x1, 160.0)
+        self.assertGreater(min(y0, y1), -10.0)
+        self.assertLess(max(y0, y1), 40.0)
+        lo, hi = sorted(vert_ax.get_xlim())
+        self.assertGreater(lo, -10.0)
+        self.assertLess(hi, 40.0)
+        # map_extent: full restores the whole grid
+        config["plot_settings"]["map_extent"] = "full"
+        captured.clear()
+        func, args, kw = generate_lat_vert_graphics(config, "aircraft", os.path.join(tmp, "fig"), tmp)[0]
+        func(*args, **kw)
+        lo, hi = sorted(captured[0].axes[0].get_xlim())
+        self.assertLess(lo, -60.0)
+
+
 class TestScorecard(unittest.TestCase):
     """The scorecard reports a significant improvement where the test
     experiment has a smaller background error, and nothing significant
