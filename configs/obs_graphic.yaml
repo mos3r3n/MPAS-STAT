@@ -62,6 +62,9 @@ plot_settings:
   generate_time_level_2d: true
   generate_lat_vert_2d: true
   generate_error_consistency: true   # Desroziers / spread-consistency profiles
+  scorecard:                         # one-page summary per experiment (false = off)
+    statistics: [RMS]
+    levels: null                     # e.g. [850, 500, 250]
   write_error_tables: true           # Desroziers CSV + YAML (JEDI filter) under <exp>/VerifyOBS/ObsErrorEstimates
 
 time_settings:
