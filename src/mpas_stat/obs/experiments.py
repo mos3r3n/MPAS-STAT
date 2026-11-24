@@ -161,7 +161,7 @@ def _ci_display_settings(config):
     (fonts, colour maps, discrete colour levels -- same keys as the
     model-space graphic.yaml; either may also sit inside plot_settings)."""
     ps = config.get("plot_settings", {})
-    out = {k: ps[k] for k in ("ci_style", "ci_alpha") if k in ps}
+    out = {k: ps[k] for k in ("ci_style", "ci_alpha", "map_extent") if k in ps}
     for key in ("plot_style", "colorbar"):
         block = config.get(key, ps.get(key))
         if block:

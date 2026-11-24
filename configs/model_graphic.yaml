@@ -10,6 +10,10 @@ figure_format: "pdf"
 # "shade" (coloured band), "errorbar" (error bars) or "none".
 ci_style: shade
 
+# Area shown by lat-lon maps and latitude axes: "auto" (zoom to the data,
+# e.g. a regional mesh), "full" (whole grid) or [lat_min, lat_max, lon_min, lon_max].
+map_extent: auto
+
 # 2-D colour scales (approach from NCAR mpas-jedi-graphics): discrete colour
 # levels at clean, rounded values, shared by all panels of a variable row so
 # experiments can be compared by colour. Diverging scales are symmetric with
