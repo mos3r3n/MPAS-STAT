@@ -246,7 +246,8 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
     settings, keeps the pre-2026-11 behaviour: flag 0 passes, and flag 19
     additionally passes only for HofX-derived innovations; spread uses ddof 0.
 
-    Returns a dict (lat, lon, hgt, pres, time, innov, qc, spread, totSpread),
+    Returns a dict (lat, lon, hgt, pres, time, innov, qc, spread, totSpread,
+    obserr -- the assumed observation error, weighted method only),
     or None if the file cannot be read. ``time`` is MetaData/dateTime when
     present (used to match observations across files), else None.
     """
@@ -264,6 +265,7 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
         'qc': None,
         'spread': None,
         'totSpread': None,
+        'obserr': None,
     }
 
     try:
@@ -361,8 +363,21 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
                     raise ValueError(f"Unsupported obs_type_filter operator: {op}")
                 obs_vector['qc'] = np.where(keep, obs_vector['qc'], np.nan)
 
+            # Observation error assumed by the DA system (weighted method
+            # only): EffectiveError<outerloop> when present, else ObsError.
+            # Missing / fill / non-positive values become NaN.
+            if settings is not None:
+                for group in (f'EffectiveError{outerloop}', 'ObsError'):
+                    if group in f:
+                        err = np.asarray(read(group), dtype=np.float64)
+                        obs_vector['obserr'] = np.where(
+                            np.isfinite(err) & (err > 0.) & (err < 1.0e10), err, np.nan)
+                        break
+
             if diag_var == "specificHumidity":
                 obs_vector['innov'] *= 1000.
+                if obs_vector['obserr'] is not None:
+                    obs_vector['obserr'] = obs_vector['obserr'] * 1000.
                 if nmember > 1:
                     obs_vector['spread'] *= 1000.
                     obs_vector['totSpread'] *= 1000.

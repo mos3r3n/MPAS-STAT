@@ -65,3 +65,4 @@ statistics:
   spread_ddof: 1
   spread_finite_ensemble_correction: true
   time_aggregation: pooled
+  error_diagnostics: true   # Desroziers sigma_o / sigma_b and assumed obs error (OMB+OMA runs)

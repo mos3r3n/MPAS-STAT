@@ -593,11 +593,14 @@ statistics:
   spread_ddof: 1
   spread_finite_ensemble_correction: true
   time_aggregation: pooled  # or "mean"
+  error_diagnostics: true   # Desroziers error estimates (§5.6)
 ```
 
 See §5 for what each setting does. `plot_settings.ci_style` (`shade`,
 `errorbar` or `none`) chooses how confidence intervals are drawn on the
 obs-space line and profile plots, as `ci_style` does for model space.
+`plot_settings.generate_error_consistency` (default `true`) turns the
+error-consistency profile figures of §5.6 on or off.
 Domain boxes (`domains`, and
 `plot_settings.latlon_domain`) may cross the dateline: write them as
 `[lat_min, lat_max, 170, -170]` or `[lat_min, lat_max, 170, 190]`.
@@ -1179,3 +1182,32 @@ the observation error.
   that resemble it, especially at short lead times. Prefer observation-space
   results for analysis-time and early-lead conclusions.
 
+### 5.6 Observation and background error consistency
+
+For experiments that have both OMB and OMA (`da` runs with an analysis
+outer loop) the statistics files carry three extra variables in the `omb`
+group, for every domain and vertical bin:
+
+| Variable | Definition |
+|---|---|
+| `ObsErrorDesroziers` | σo ≈ √mean[(O−A)(O−B)] |
+| `BkgErrorDesroziers` | σb ≈ √mean[(A−B)(O−B)], with A−B = (O−B) − (O−A) |
+| `ObsErrorAssumed` | √mean(σ²) of the error the DA actually used (`EffectiveError<outerloop>`, else `ObsError`) |
+
+They are computed on observations that passed QC in both OMB and OMA
+(matched by location and time, so a separate, reordered analysis file is
+fine) and are pooled over cycles in mean-square form. The figure
+`error_consistency_1d/` shows, per variable, the assumed error with the
+two Desroziers estimates (top row) and two ratios (bottom row):
+
+- **Desroziers σo / assumed σo.** Below 1: the assigned observation error is
+  larger than the data suggest (observations under-weighted); above 1:
+  too small (over-weighted).
+- **Consistency ratio** TotalSpread / RMS(OMB) (ensemble runs). Below 1:
+  the ensemble is under-dispersive; above 1: over-dispersive.
+
+The Desroziers estimates are exact only when the analysis used the correct
+error statistics; treat them as a consistency check, not a tuning answer
+(Desroziers et al. 2005, *QJRMS* 131, 3385–3396). Values are written only by
+`method: weighted` with `error_diagnostics: true`; radiances are shown for
+the global domain only, and surface obs get no profile figure.

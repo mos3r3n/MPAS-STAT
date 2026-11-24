@@ -61,6 +61,7 @@ plot_settings:
   # palette: [black, "#d95f02", "#7570b3", "#1b9e77"]   # line colours (default: CVD-safe)
   generate_time_level_2d: true
   generate_lat_vert_2d: true
+  generate_error_consistency: true   # Desroziers / spread-consistency profiles
 
 time_settings:
   start_time: "2024-09-13 06:00:00"
