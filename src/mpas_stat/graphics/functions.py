@@ -40,6 +40,10 @@ from .plots_1d import (
     plot_profile_reduction_1d,
     plot_profiles_1d,
 )
+from .plots_normdep import (
+    plot_normdep_histogram,
+    plot_normdep_profile,
+)
 from .plots_ensemble import (
     plot_rank_histogram,
     plot_rank_histogram_levels,
@@ -72,6 +76,8 @@ from .style import (
 
 __all__ = [
     "plot_error_consistency_1d",
+    "plot_normdep_histogram",
+    "plot_normdep_profile",
     "plot_rank_histogram",
     "plot_rank_histogram_levels",
     "plot_spread_skill",

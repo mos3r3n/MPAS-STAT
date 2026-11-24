@@ -820,3 +820,83 @@ def collect_obs_spread_skill(diag_base_dir, exp_name, diag_obs, cycles, display_
                 "std": np.sqrt(np.maximum(ms - mean * mean, 0.0)),
             }
     return out
+
+
+# ----------------------------------------------------------------------------
+# Normalized departures (statistics.normalized_departures): departures
+# divided by the assumed observation error ("NormDep*", omb and oma) and,
+# for ensembles, by the total spread ("NormDepTotal*", omb). Pooled over
+# cycles with their own counts; histograms summed.
+# ----------------------------------------------------------------------------
+def _pool_rms_mean(rms_list, mean_list, count_list):
+    """Count-weighted pooled (rms, mean, count) over cycles (axis 0)."""
+    c = np.nan_to_num(np.stack(count_list, axis=0))
+    r = np.stack(rms_list, axis=0)
+    m = np.stack(mean_list, axis=0)
+    okr = np.isfinite(r) & (c > 0)
+    okm = np.isfinite(m) & (c > 0)
+    wr = np.where(okr, c, 0.0).sum(axis=0)
+    wm = np.where(okm, c, 0.0).sum(axis=0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        rms = np.sqrt(np.where(okr, c * r * r, 0.0).sum(axis=0) / wr)
+        mean = np.where(okm, c * m, 0.0).sum(axis=0) / wm
+    rms = np.where(wr > 0, rms, np.nan)
+    mean = np.where(wm > 0, mean, np.nan)
+    return rms, mean, c.sum(axis=0)
+
+
+def collect_obs_normalized_departures(diag_base_dir, exp_name, diag_obs, cycles, display_vars,
+                                      raw_vars, domain, profile_key=None):
+    """{var: {kind: {"rms", "mean", "count", "hist", "rms_profile",
+    "mean_profile", "count_profile"}}, plus "coord" and "edges"} with kind
+    in "omb" (O-B / sigma_o), "oma" (O-A / sigma_o) and "omb_total"
+    ((O-B) / total spread, ensembles), pooled over cycles."""
+    files = [obs_diag_file(diag_base_dir, exp_name, diag_obs, c) for c in cycles]
+    kinds = (("omb", "omb", "NormDep"), ("oma", "oma", "NormDep"),
+             ("omb_total", "omb", "NormDepTotal"))
+    out = {}
+    for var, raw in zip(display_vars, raw_vars):
+        g = nc_group_name(raw)
+        entry, coord, edges = {}, None, None
+        for kind, diagtype, base in kinds:
+            names = [f"{base}RMS", f"{base}Mean", f"{base}Count", f"{base}Hist"]
+            acc = {"r0": [], "m0": [], "c0": [], "r1": [], "m1": [], "c1": [], "h": None}
+            for f in files:
+                d0 = _read_group_vars(f, (diagtype, g, "0D", domain), names)
+                if f"{base}RMS" in d0 and f"{base}Count" in d0:
+                    acc["r0"].append(np.atleast_1d(d0[f"{base}RMS"]))
+                    acc["m0"].append(np.atleast_1d(d0.get(f"{base}Mean", np.nan)))
+                    acc["c0"].append(np.atleast_1d(d0[f"{base}Count"]))
+                    if f"{base}Hist" in d0:
+                        h = np.nan_to_num(d0[f"{base}Hist"])
+                        acc["h"] = h if acc["h"] is None else acc["h"] + h
+                if profile_key:
+                    d1 = _read_group_vars(f, (diagtype, g, "1D", profile_key), names)
+                    if f"{base}RMS" in d1 and f"{base}Count" in d1:
+                        acc["r1"].append(d1[f"{base}RMS"])
+                        acc["m1"].append(d1.get(f"{base}Mean", np.full_like(d1[f"{base}RMS"], np.nan)))
+                        acc["c1"].append(d1[f"{base}Count"])
+                        coord = d1.get("_levels", coord)
+            if not acc["r0"]:
+                continue
+            rms, mean, count = _pool_rms_mean(acc["r0"], acc["m0"], acc["c0"])
+            if not (count[0] > 0):
+                continue
+            e = {"rms": float(rms[0]), "mean": float(mean[0]), "count": float(count[0]),
+                 "hist": acc["h"]}
+            if acc["r1"]:
+                e["rms_profile"], e["mean_profile"], e["count_profile"] = _pool_rms_mean(
+                    acc["r1"], acc["m1"], acc["c1"])
+            entry[kind] = e
+            if edges is None and files:
+                for f in files:
+                    if os.path.exists(f):
+                        with nc.Dataset(f, "r") as ds:
+                            if "NormDepBinEdges" in ds.variables:
+                                edges = np.asarray(ds.variables["NormDepBinEdges"][:])
+                                break
+        if entry:
+            entry["coord"] = coord
+            entry["edges"] = edges
+            out[var] = entry
+    return out

@@ -596,6 +596,7 @@ statistics:
   error_diagnostics: true   # Desroziers error estimates (§5.6)
   ensemble_diagnostics: true    # rank histograms + spread-skill, n_member > 1 (§5.7)
   rank_histogram_perturb: true  # perturb members with the obs error before ranking
+  normalized_departures: true   # departures / assumed obs error (and / total spread) (§5.8)
 ```
 
 See §5 for what each setting does. `plot_settings.ci_style` (`shade`,
@@ -1332,3 +1333,40 @@ All of these quantities add across cycles. The figures are drawn when
 The total spread includes the assumed observation error, so a mis-specified
 observation error (see §5.6) shows up here too. Read the two diagnostics
 together.
+
+### 5.8 Normalized departures
+
+Departures are divided by the error the DA itself assigned (the same
+`EffectiveError<outer loop>` / `ObsError` as `ObsErrorAssumed`;
+`EffectiveError0` for O−B). For ensembles, O−B is also divided by the total
+spread √(spread² + σo²). Written per domain and level, in the `omb` and
+`oma` groups:
+
+| Variable | Meaning |
+|---|---|
+| `NormDepRMS`, `NormDepMean`, `NormDepCount` | RMS, mean and count of d/σo, where d = O−B or O−A |
+| `NormDepTotalRMS`, `NormDepTotalMean`, `NormDepTotalCount` | the same for (O−B)/total spread (ensembles, `omb` only) |
+| `NormDepHist`, `NormDepTotalHist` | 0D histograms over `NormDepBinEdges` (−8 to 8 in steps of 0.25; values outside go in the end bins) |
+
+They are pooled over cycles with their own counts. Figures go to
+`<sensor>/normalized_departure/` and are switched by
+`plot_settings.generate_normalized_departures`:
+
+- **`normdep_histogram_<domain>`:** the O−B distributions on a log scale,
+  next to a Gaussian with the same RMS. Each panel lists the RMS, the mean and
+  the share of |z| > 3 together with its Gaussian value.
+- **`normdep_<profile>`:** the RMS (top row) and mean (bottom row) of the
+  normalized departures by level.
+
+How to read them:
+
+- **(O−B)/σo:** its expected RMS is √(1 + σb²/σo²), which is above 1. It is
+  the quantity the background check compares with its threshold.
+- **(O−B)/total spread:** RMS should be 1. Above 1 means too little spread or
+  too small an observation error; below 1 means the opposite.
+- **(O−A)/σo:** mean square = 2 Jo / n, the analysis cost per observation.
+- **Mean:** a bias in units of σo. For example, a mean of −0.2 means the
+  background is warm by 0.2 σo.
+- **Tails:** heavier than the Gaussian means gross errors or non-Gaussian
+  errors. That is where QC thresholds or a Huber norm act, and it matters for
+  the significance of RMS differences.

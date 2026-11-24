@@ -16,6 +16,7 @@ from .binning import (
 from .bounds import _resolve_latlon_bounds_for
 from .common import (
     ERROR_DIAG_KEYS,
+    NORM_DEP_EDGES,
     SPREAD_BIN_EDGES,
     SPREAD_SKILL_KEYS,
     STAT_KEYS_2D,
@@ -116,7 +117,7 @@ def _resolve_stat_grids(config: Dict, diag_obs: str, obs_config, bin_method: int
 
 def _allocate_results(tags, lead_shape: Tuple[int, ...], grids: Dict,
                       num_exp: int, num_dom: int, num_time: int, num_var: int,
-                      error_diag=(), n_rank: int = 0) -> Dict:
+                      error_diag=(), n_rank: int = 0, norm_dep: bool = False) -> Dict:
     """NaN-filled result arrays for every diagtype in `tags` ("omb"/"oma"
     for cycling DA, "omf" for extended forecasts).
 
@@ -143,6 +144,18 @@ def _allocate_results(tags, lead_shape: Tuple[int, ...], grids: Dict,
     for prefix in error_diag:
         results[f"{prefix}_omb"] = np.full(zero_d, np.nan)
         results[f"{prefix}_omb_bin"] = np.full(one_d, np.nan)
+
+    if norm_dep:
+        nhist = len(NORM_DEP_EDGES) - 1
+        for tag in tags:
+            prefixes = ("nd",) + (("ndt",) if tag == "omb" else ())
+            for p in prefixes:
+                for stat in ("rms", "mean"):
+                    results[f"{p}_{stat}_{tag}"] = np.full(zero_d, np.nan)
+                    results[f"{p}_{stat}_{tag}_bin"] = np.full(one_d, np.nan)
+                results[f"{p}_count_{tag}"] = np.zeros(zero_d)
+                results[f"{p}_count_{tag}_bin"] = np.zeros(one_d)
+                results[f"{p}hist_{tag}"] = np.zeros(zero_d + (nhist,))
 
     if n_rank > 1:
         nsb = len(SPREAD_BIN_EDGES) - 1
@@ -265,6 +278,7 @@ def process_experiment(config: Dict, diag_obs: str) -> Dict:
         error_diag=([prefix for _, prefix in ERROR_DIAG_KEYS]
                     if settings.get("error_diagnostics") else ()),
         n_rank=_n_rank(config, settings),
+        norm_dep=bool(settings.get("normalized_departures")),
     )
     results.update(_metadata(times, levels, obs_config, domains))
     results["n_member"] = list(config["experiments"]["n_member"])
@@ -368,6 +382,9 @@ def _store_innovation_stats(results, iexp, it, iv, omb_vec, oma_vec, domains,
         )
         _store_domain_stats(results, "omb", (iexp, idom, it), iv,
                             omb_vec, omb_qc, omb_bins, levels, bin_method, settings)
+        if "nd_rms_omb" in results:
+            _store_normalized_departures(results, "omb", (iexp, idom, it), iv, omb_vec,
+                                         omb_qc, omb_bins, levels, bin_method)
         if "rank_omb" in results and omb_vec.get("rank") is not None:
             _store_ensemble_diagnostics(results, (iexp, idom, it), iv, omb_vec, omb_qc,
                                         omb_bins, levels, bin_method)
@@ -377,10 +394,46 @@ def _store_innovation_stats(results, iexp, it, iv, omb_vec, oma_vec, domains,
             )
             _store_domain_stats(results, "oma", (iexp, idom, it), iv,
                                 oma_vec, oma_qc, oma_bins, levels, bin_method, settings)
+            if "nd_rms_oma" in results:
+                _store_normalized_departures(results, "oma", (iexp, idom, it), iv, oma_vec,
+                                             oma_qc, oma_bins, levels, bin_method)
 
     if has_oma and settings is not None and settings.get("error_diagnostics"):
         _store_error_diagnostics(results, (iexp, it), iv, omb_vec, oma_vec,
                                  domains, levels, bin_method)
+
+
+def _store_normalized_departures(results, tag, idx, iv, vec, qc, bin_values, levels,
+                                 bin_method) -> None:
+    """RMS, mean, count (whole domain and per level) and histogram of the
+    departure divided by the assumed observation error -- and, for an
+    ensemble OMB, by the total spread -- for one vector and domain."""
+    innov = np.asarray(vec["innov"], dtype=np.float64)
+    num_lev = len(levels)
+    nbins = len(NORM_DEP_EDGES) - 1
+    pairs = [("nd", vec.get("obserr"))]
+    if tag == "omb":
+        pairs.append(("ndt", vec.get("totSpread")))
+    for prefix, scale in pairs:
+        if scale is None or f"{prefix}_rms_{tag}" not in results:
+            continue
+        scale = np.asarray(scale, dtype=np.float64)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            z = np.where(np.isfinite(scale) & (scale > 0), innov / scale, np.nan)
+        stats = calculate_stats(z, qc, bin_values, levels, bin_method)
+        count = np.asarray(stats["count"], dtype=np.float64)
+        if count[num_lev] > 0:
+            results[f"{prefix}_rms_{tag}"][idx + (iv,)] = stats["rmse"][num_lev]
+            results[f"{prefix}_mean_{tag}"][idx + (iv,)] = stats["mean"][num_lev]
+            results[f"{prefix}_count_{tag}"][idx + (iv,)] = count[num_lev]
+        valid = count[:num_lev] > 0
+        results[f"{prefix}_rms_{tag}_bin"][idx + (valid, iv)] = stats["rmse"][:num_lev][valid]
+        results[f"{prefix}_mean_{tag}_bin"][idx + (valid, iv)] = stats["mean"][:num_lev][valid]
+        results[f"{prefix}_count_{tag}_bin"][idx + (slice(None), iv)] = count[:num_lev]
+        ok = np.isfinite(z) if qc is None else (np.isfinite(z) & (np.asarray(qc) == 0))
+        zc = np.clip(z[ok], NORM_DEP_EDGES[0], NORM_DEP_EDGES[-1] - 1.0e-9)
+        hist = np.histogram(zc, bins=NORM_DEP_EDGES)[0].astype(np.float64)
+        results[f"{prefix}hist_{tag}"][idx + (iv,)] = hist[:nbins]
 
 
 def _n_rank(config: Dict, settings: Dict) -> int:
