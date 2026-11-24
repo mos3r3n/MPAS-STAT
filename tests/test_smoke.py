@@ -225,5 +225,20 @@ class TestConfigAndFileResolution(unittest.TestCase):
         np.testing.assert_allclose(levels, [0.0, 1.0, 2.0])
 
 
+
+class TestWindLabels(unittest.TestCase):
+    def test_u_is_eastward_and_v_is_northward(self):
+        from mpas_stat.obs.sensor_config import OBSERVATION_CONFIGS, display_var_names
+        checked = 0
+        for name, cfg in OBSERVATION_CONFIGS.items():
+            if "windEastward" not in cfg.variables:
+                continue
+            labels = dict(zip(cfg.variables, display_var_names(name)))
+            self.assertTrue(labels["windEastward"].startswith("U"), name)   # U or U10
+            self.assertTrue(labels["windNorthward"].startswith("V"), name)
+            checked += 1
+        self.assertGreaterEqual(checked, 6)
+
+
 if __name__ == "__main__":
     unittest.main()
