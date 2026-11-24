@@ -93,7 +93,7 @@ class ObservationConfig:
 OBSERVATION_CONFIGS: Dict[str, ObservationConfig] = {
     # ---------------- Conventional observations ----------------
     "sondes": ObservationConfig(
-        variables=['windNorthward', 'windEastward', 'airTemperature', 'specificHumidity'],
+        variables=['windEastward', 'windNorthward', 'airTemperature', 'specificHumidity'],
         units=[r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{K}$', r'$\mathrm{g \cdot kg^{-1}}$'],
         labels=['(a) U', '(b) V', '(c) T', '(d) Q'],
         bin_method=PRESSURE,
@@ -107,7 +107,7 @@ OBSERVATION_CONFIGS: Dict[str, ObservationConfig] = {
         cycle_valid_hours=[0, 12],
     ),
     "profiler": ObservationConfig(
-        variables=['windNorthward', 'windEastward'],
+        variables=['windEastward', 'windNorthward'],
         units=[r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{m \cdot s^{-1}}$'],
         labels=['(a) U', '(b) V'],
         bin_method=PRESSURE,
@@ -115,25 +115,25 @@ OBSERVATION_CONFIGS: Dict[str, ObservationConfig] = {
         obs_type_filter=('eq', 221),
     ),
     "aircraft": ObservationConfig(
-        variables=['windNorthward', 'windEastward', 'airTemperature'],
+        variables=['windEastward', 'windNorthward', 'airTemperature'],
         units=[r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{K}$'],
         labels=['(a) U', '(b) V', '(c) T'],
         bin_method=PRESSURE,
     ),
     "satwind": ObservationConfig(
-        variables=['windNorthward', 'windEastward'],
+        variables=['windEastward', 'windNorthward'],
         units=[r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{m \cdot s^{-1}}$'],
         labels=['(a) U', '(b) V'],
         bin_method=PRESSURE,
     ),
     "satwnd": ObservationConfig(
-        variables=['windNorthward', 'windEastward'],
+        variables=['windEastward', 'windNorthward'],
         units=[r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{m \cdot s^{-1}}$'],
         labels=['(a) U', '(b) V'],
         bin_method=PRESSURE,
     ),
     "sfc": ObservationConfig(
-        variables=['windNorthward', 'windEastward', 'airTemperature', 'specificHumidity', 'stationPressure'],
+        variables=['windEastward', 'windNorthward', 'airTemperature', 'specificHumidity', 'stationPressure'],
         units=[r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{K}$', r'$\mathrm{g \cdot kg^{-1}}$', 'Pa'],
         labels=['(a) U10', '(b) V10', '(c) T2', '(d) Q2', '(e) Ps'],
         bin_method=PRESSURE,
