@@ -773,6 +773,33 @@ class TestChannelCovariance(unittest.TestCase):
         self._check(ensemble=True)
 
 
+class TestUnitLabels(unittest.TestCase):
+    def test_ncar_style_labels(self):
+        from mpas_stat.graphics.labels import (cfg_var_label, pct_diff_label, plain_units,
+                                               stat_label, var_label)
+        self.assertEqual(plain_units(r"$\mathrm{m \cdot s^{-1}}$"), "m/s")
+        self.assertEqual(plain_units(r"$\mathrm{g\,kg^{-1}}$"), "g/kg")
+        self.assertEqual(plain_units(r"$^\circ\mathrm{C}$"), "°C")
+        self.assertEqual(plain_units(r"$\%$"), "%")
+        self.assertEqual(var_label("T", r"$\mathrm{K}$"), "T (K)")
+        self.assertEqual(var_label("Ps", "Pa"), "Ps (Pa)")
+        self.assertEqual(var_label("ratio", None), "ratio")
+        self.assertEqual([stat_label(s) for s in ("RMS", "Bias", "STD", "TotalSpread", "spread")],
+                         ["rms", "mean", "STD", "total spread", "spread"])
+        self.assertEqual(pct_diff_label("RMS", "Control"), "rms: % diff. from Control")
+        self.assertEqual(cfg_var_label("U", {"variable_units": {"U": "m/s"}}), "U (m/s)")
+
+    def test_every_variable_has_plain_units(self):
+        """All model and obs units convert to plain text (no LaTeX left)."""
+        from mpas_stat.graphics.labels import plain_units
+        from mpas_stat.model.variables import _build_mpas_var_map
+        from mpas_stat.obs.sensor_config import OBSERVATION_CONFIGS
+        units = [v.get("units") for v in _build_mpas_var_map().values()]
+        units += [u for c in OBSERVATION_CONFIGS.values() for u in (c.units or [])]
+        for u in units:
+            self.assertNotRegex(plain_units(u), r"[$\\{}]", u)
+
+
 class TestDateTickLabels(unittest.TestCase):
     def test_month_and_year_on_their_own_line(self):
         """Day numbers alone on the first line; month (+ year) on the second,

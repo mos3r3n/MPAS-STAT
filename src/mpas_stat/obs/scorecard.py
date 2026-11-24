@@ -39,6 +39,7 @@ from ..core.pooling import (  # noqa: E402
 )
 from ..core.timeutils import generate_forecast_leads  # noqa: E402
 from ..graphics.colour import colorbar_ticks, colour_scale  # noqa: E402
+from ..graphics.labels import stat_label  # noqa: E402
 from ..graphics.style import apply_pub_style  # noqa: E402
 from .common import (  # noqa: E402
     generate_cycles,
@@ -373,15 +374,15 @@ def plot_scorecard(data, path, ref_label, exp_label, title_kind, settings, confi
                     clip_on=False)
     ax.axvline(ncol, color="black", linewidth=1.2)
 
-    stat_txt = "/".join(dict.fromkeys(c[0] for c in columns))
-    ax.set_title(f"{exp_label} vs {ref_label}: {title_kind} {stat_txt} difference (%)\n"
+    stat_txt = "/".join(dict.fromkeys(stat_label(c[0]) for c in columns))
+    ax.set_title(f"{exp_label} vs {ref_label}: {title_kind} {stat_txt}, % diff.\n"
                  "▲ significantly better   ▼ significantly worse   "
                  f"({get_bootstrap_settings(config)['ci']:g}% bootstrap CI over cycles)",
                  fontsize=10, pad=34 if (has_leads or nstats > 1) else 22)
     cb = fig.colorbar(mesh, ax=ax, fraction=0.04, pad=0.02, aspect=25,
                       shrink=min(1.0, 14.0 / max(nrow, 1)) if nrow > 14 else 1.0,
                       ticks=colorbar_ticks(levels) if levels is not None else None)
-    cb.set_label(f"{stat_txt} diff. (%) from {ref_label}  (negative = better)")
+    cb.set_label(f"{stat_txt}: % diff. from {ref_label}  (negative = better)")
     cb.ax.minorticks_off()
 
     fmt = str(config["plot_settings"].get("figure_format", "png")).lower()

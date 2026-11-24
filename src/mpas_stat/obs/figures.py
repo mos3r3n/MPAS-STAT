@@ -167,6 +167,12 @@ def _process_sensor(config, diag_obs, sensor_graphic_dir, diag_base_dir):
     return diag_obs, len(jobs)
 
 
+def _units_map(diag_obs):
+    """{display variable: units} of a sensor, for figure titles."""
+    ocfg = get_obs_config(diag_obs)
+    return dict(zip(display_var_names(diag_obs), ocfg.units or []))
+
+
 def _stat_keys(config, forecast=False):
     """STAT_KEYS for the figures of the cycling (or forecast) experiments:
     Spread and TotalSpread only when at least one of them is an ensemble
@@ -196,6 +202,8 @@ def generate_time_series_graphics(config, diag_obs, graphic_out_dir, diag_base_d
     cycles = generate_cycles(adjusted_start, end_time, interval)
 
     cfg["variables"] = display_vars
+
+    cfg["variable_units"] = _units_map(diag_obs)
 
     # Read once per pseudo-experiment (covers every domain/stat), reused by
     # every job below -- cheap, and keeps this collection off the worker
@@ -235,6 +243,8 @@ def generate_profile_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
     cycles = generate_cycles(adjusted_start, end_time, interval)
 
     cfg["variables"] = display_vars
+
+    cfg["variable_units"] = _units_map(diag_obs)
 
     coord_label, invert_y = _profile_axis_meta(bin_method)
 
@@ -288,6 +298,7 @@ def _profile_diff_jobs(config, diag_obs, graphic_out_dir, diag_base_dir, cycles,
         cfg = _comparison_graphic_cfg(config, os.path.join(graphic_out_dir, diagtype),
                                       names, labels, colors)
         cfg["variables"] = display_vars
+        cfg["variable_units"] = _units_map(diag_obs)
         cfg["profile_diff_section"] = "profile_diff_1d"
         what = "O−B (background)" if diagtype == "omb" else "O−A (analysis)"
         for stat in stats:
@@ -341,6 +352,7 @@ def generate_error_consistency_graphics(config, diag_obs, graphic_out_dir, diag_
 
     cfg = _comparison_graphic_cfg(config, graphic_out_dir, names, labels, colors)
     cfg["variables"] = display_vars
+    cfg["variable_units"] = _units_map(diag_obs)
 
     jobs = []
     for domain in domain_loop:
@@ -389,6 +401,7 @@ def generate_ensemble_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
 
     cfg = _comparison_graphic_cfg(config, graphic_out_dir, names, labels, colors)
     cfg["variables"] = display_vars
+    cfg["variable_units"] = _units_map(diag_obs)
 
     jobs = []
     for domain in domain_loop:
@@ -435,6 +448,7 @@ def generate_normdep_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
     coord_label, _ = _profile_axis_meta(bin_method)
     cfg = _comparison_graphic_cfg(config, graphic_out_dir, names, labels, colors)
     cfg["variables"] = display_vars
+    cfg["variable_units"] = _units_map(diag_obs)
 
     jobs = []
     for domain in domains:
@@ -515,6 +529,7 @@ def generate_lat_lon_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
         cfg = _comparison_graphic_cfg(
             config, os.path.join(graphic_out_dir, diagtype), names, labels, colors)
         cfg["variables"] = display_vars
+        cfg["variable_units"] = _units_map(diag_obs)
 
         per_exp_latlon = {
             name: collect_obs_lat_lon_2d(
@@ -567,6 +582,7 @@ def generate_time_level_graphics(config, diag_obs, graphic_out_dir, diag_base_di
         cfg = _comparison_graphic_cfg(
             config, os.path.join(graphic_out_dir, diagtype), names, labels, colors)
         cfg["variables"] = display_vars
+        cfg["variable_units"] = _units_map(diag_obs)
 
         for domain in domain_loop:
             profile_key = profile_key_for_domain(bin_method, domain)
@@ -616,6 +632,7 @@ def generate_lat_vert_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
         cfg = _comparison_graphic_cfg(
             config, os.path.join(graphic_out_dir, diagtype), names, labels, colors)
         cfg["variables"] = display_vars
+        cfg["variable_units"] = _units_map(diag_obs)
 
         per_exp_latvert = {
             name: collect_obs_lat_vert_2d(
@@ -651,6 +668,7 @@ def generate_forecast_lead_graphics(config, diag_obs, graphic_out_dir, diag_base
 
     cfg = {
         "variables": display_vars,
+        "variable_units": _units_map(diag_obs),
         "experiments": {
             "names": names,
             "labels": labels,
@@ -721,6 +739,7 @@ def generate_forecast_profile_graphics(config, diag_obs, graphic_out_dir, diag_b
 
     cfg = {
         "variables": display_vars,
+        "variable_units": _units_map(diag_obs),
         "experiments": {
             "names": names,
             "labels": labels,
@@ -779,6 +798,7 @@ def generate_forecast_lat_lon_graphics(config, diag_obs, graphic_out_dir, diag_b
 
     cfg = _comparison_graphic_cfg(config, graphic_out_dir, names, labels, colors)
     cfg["variables"] = display_vars
+    cfg["variable_units"] = _units_map(diag_obs)
 
     jobs = []
     for lead in leads:
@@ -823,6 +843,7 @@ def generate_forecast_lat_vert_graphics(config, diag_obs, graphic_out_dir, diag_
 
     cfg = _comparison_graphic_cfg(config, graphic_out_dir, names, labels, colors)
     cfg["variables"] = display_vars
+    cfg["variable_units"] = _units_map(diag_obs)
 
     jobs = []
     for lead in leads:
@@ -878,6 +899,7 @@ def generate_forecast_time_level_graphics(config, diag_obs, graphic_out_dir, dia
 
     cfg = _comparison_graphic_cfg(config, graphic_out_dir, names, labels, colors)
     cfg["variables"] = display_vars
+    cfg["variable_units"] = _units_map(diag_obs)
 
     jobs = []
     for domain in domain_loop:

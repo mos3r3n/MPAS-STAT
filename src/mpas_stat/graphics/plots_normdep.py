@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 
+from .labels import cfg_var_label
 from .axes import (
     _apply_latitude_formatter,
     _categorical_positions,
@@ -92,7 +93,7 @@ def plot_normdep_histogram(Data, domain, cfg, tail=3.0):
         ax.set_xlim(-8, 8)
         ax.set_xlabel("normalized departure")
         ax.set_ylabel("density")
-        ax.set_title(_title_with_panel(iv, var))
+        ax.set_title(_title_with_panel(iv, cfg_var_label(var, cfg)))
         for k, (c, t) in enumerate(notes):
             ax.text(0.02, 0.97 - 0.07 * k, t, transform=ax.transAxes, fontsize=6.5, color=c,
                     ha="left", va="top",
@@ -144,10 +145,10 @@ def plot_normdep_profile(Data, profile_key, coord_label, cfg):
                 present.add(kind)
         ax_r.axvline(1.0, color="0.4", lw=0.8, ls="--", zorder=0)
         ax_m.axvline(0.0, color="0.4", lw=0.8, ls="--", zorder=0)
-        ax_r.set_xlabel("RMS of normalized departure")
+        ax_r.set_xlabel("rms of normalized departure")
         ax_m.set_xlabel("mean normalized departure")
-        ax_r.set_title(_title_with_panel(iv, var))
-        ax_m.set_title(_title_with_panel(nvars + iv, var))
+        ax_r.set_title(_title_with_panel(iv, cfg_var_label(var, cfg)))
+        ax_m.set_title(_title_with_panel(nvars + iv, cfg_var_label(var, cfg)))
         for ax in (ax_r, ax_m):
             ax.set_ylabel("Latitude" if latitude else coord_label)
             if coord is not None:

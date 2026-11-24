@@ -5,6 +5,7 @@ import numpy as np
 
 from ..core.bootstrap import get_bootstrap_settings
 from ..core.pooling import entry_difference_ci, entry_value
+from .labels import cfg_var_label, stat_label, pct_diff_label
 from .axes import (
     _adaptive_geo_locator,
     _apply_latitude_formatter,
@@ -45,7 +46,7 @@ def _colourmap_settings(use_relative, stat_name, cfg, data=None, refname="cntl")
             diverging_cmap,
             cfg.get("relative_reduction_vmin", style.get("relative_vmin", None)),
             cfg.get("relative_reduction_vmax", style.get("relative_vmax", None)),
-            f"{stat_name} diff. (%) from {refname}",
+            pct_diff_label(stat_name, refname),
         )
 
     if str(stat_name).lower() == "mean":
@@ -53,14 +54,14 @@ def _colourmap_settings(use_relative, stat_name, cfg, data=None, refname="cntl")
             cfg.get("mean_cmap", diverging_cmap),
             cfg.get("mean_vmin", None),
             cfg.get("mean_vmax", None),
-            stat_name,
+            stat_label(stat_name),
         )
 
     return (
         cfg.get("absolute_cmap", style.get("absolute_cmap", "YlGnBu")),
         cfg.get("absolute_vmin", None),
         cfg.get("absolute_vmax", None),
-        stat_name,
+        stat_label(stat_name),
     )
 
 
@@ -299,7 +300,7 @@ def _draw_2d_panels(fig, axs, var_names, exp_names, exp_labels,
                     ax.invert_yaxis()
 
             _nice_colorbar(fig, ax, pcm, cbar_label, cfg, relative=show_rel, levels=levels)
-            ax.set_title(_title_with_panel(panel_id - 1, f"{exp_labels[iexp]}\n{var_name}"))
+            ax.set_title(_title_with_panel(panel_id - 1, f"{exp_labels[iexp]}\n{cfg_var_label(var_name, cfg)}"))
             _ensure_panel_ticks(ax)
 
 

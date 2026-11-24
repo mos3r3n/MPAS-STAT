@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 
+from .labels import cfg_var_label
 from .axes import (
     _apply_latitude_formatter,
     _categorical_positions,
@@ -100,7 +101,7 @@ def plot_rank_histogram(RankData, domain, cfg):
         ax.set_ylim(bottom=0)
         ax.set_xlabel("rank of observation" if same_size else "normalized rank")
         ax.set_ylabel("frequency / flat")
-        ax.set_title(_title_with_panel(iv, var))
+        ax.set_title(_title_with_panel(iv, cfg_var_label(var, cfg)))
         for k, (c, t) in enumerate(notes):
             ax.text(0.03, 0.04 + 0.075 * k, t, transform=ax.transAxes, fontsize=7.5,
                     color=c, ha="left", va="bottom",
@@ -150,7 +151,7 @@ def plot_rank_histogram_levels(RankData, exp_name, profile_key, coord_label, cfg
     for iv, var in enumerate(var_names):
         ax = axs.flat[iv]
         ax.grid(False)
-        ax.set_title(_title_with_panel(iv, var))
+        ax.set_title(_title_with_panel(iv, cfg_var_label(var, cfg)))
         if var not in maps:
             continue
         ratio, coord = maps[var]
@@ -215,8 +216,8 @@ def plot_spread_skill(SSData, domain, cfg):
             ax.set_ylim(lo, hi)
             ax.set_aspect("equal", adjustable="box")
         ax.set_xlabel("total spread (ensemble + obs error)")
-        ax.set_ylabel("RMS(OMB)")
-        ax.set_title(_title_with_panel(iv, var))
+        ax.set_ylabel("rms(OMB)")
+        ax.set_title(_title_with_panel(iv, cfg_var_label(var, cfg)))
     if not any_data:
         plt.close(fig)
         return

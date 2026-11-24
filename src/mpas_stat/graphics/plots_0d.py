@@ -8,6 +8,7 @@ import numpy as np
 
 from ..core.bootstrap import get_bootstrap_settings
 from ..core.pooling import entry_difference_ci, entry_reduction_ci, entry_value
+from .labels import cfg_var_label, stat_label, pct_diff_label
 from .axes import _set_compact_time_axis
 from .style import (
     _ensure_panel_ticks,
@@ -67,8 +68,8 @@ def plot_time_series_0d(Stats, stat_name, cfg):
                     color=colors[iexp % len(colors)],
                     linestyle=linestyles[iexp % len(linestyles)])
 
-        ax.set_title(_title_with_panel(ivar, var_name))
-        ax.set_ylabel(stat_name)
+        ax.set_title(_title_with_panel(ivar, cfg_var_label(var_name, cfg)))
+        ax.set_ylabel(stat_label(stat_name))
         if yvals:
             _set_compact_time_axis(ax, x, xlabels, cfg, xlabel="Assimilation cycle")
         else:
@@ -178,9 +179,9 @@ def plot_forecast_lead_0d(ForecastLead, stat_name, cfg):
                                marker="o", linewidths=1.0, zorder=6)
                     any_significance_marked = True
 
-        ax.set_title(_title_with_panel(ivar, var_name))
+        ax.set_title(_title_with_panel(ivar, cfg_var_label(var_name, cfg)))
         ax.set_xlabel("Forecast lead time (h)")
-        ax.set_ylabel(stat_name)
+        ax.set_ylabel(stat_label(stat_name))
         if has_data:
             ax.set_xticks(x)
         _ensure_panel_ticks(ax)
@@ -277,9 +278,9 @@ def plot_forecast_lead_diff_0d(ForecastLead, stat_name, cfg):
             has_curve = True
 
         ax.axhline(0.0, color="0.4", linewidth=0.8, linestyle="--")
-        ax.set_title(_title_with_panel(ivar, var_name))
+        ax.set_title(_title_with_panel(ivar, cfg_var_label(var_name, cfg)))
         ax.set_xlabel("Forecast lead time (h)")
-        ax.set_ylabel(f"{stat_name}: diff. (%) from {exp_labels[0]}")
+        ax.set_ylabel(pct_diff_label(stat_name, exp_labels[0]))
         if has_curve:
             ax.set_xticks(x)
         _ensure_panel_ticks(ax)
