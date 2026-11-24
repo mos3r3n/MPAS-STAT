@@ -21,6 +21,7 @@ from .style import (
     _title_with_panel,
     apply_pub_style,
     auto_layout,
+    draw_ci,
     get_exp_plot_settings,
     is_relative_stat,
     significant_from_ci,
@@ -33,8 +34,6 @@ def plot_profiles_1d(Profiles, profile_key, stat_name, cfg):
     apply_pub_style(cfg)
     var_names     = cfg["variables"]
     out_dir       = _section_out_dir(cfg, "profiles_1d")
-    ci_style      = str(cfg.get("profile_ci_style", cfg.get("plot_style", {}).get("profile_ci_style", "shade"))).lower()
-    plot_errorbar = cfg.get("profile_errorbar", True)  # backward compatible switch
 
     exp_names, exp_labels, colors, linestyles = get_exp_plot_settings(cfg)
     label_map = dict(zip(exp_names, exp_labels))
@@ -75,17 +74,8 @@ def plot_profiles_1d(Profiles, profile_key, stat_name, cfg):
             ax.plot(prof, y_plot, label=label_map[exp_name],
                     color=color, linestyle=ls, zorder=3)
 
-            if plot_errorbar and ci_low is not None and ci_high is not None:
-                if ci_style in ("shade", "shading", "fill"):
-                    # Horizontal CI envelope around the profile.
-                    alpha = cfg.get("ci_alpha", 0.16)
-                    ax.fill_betweenx(y_plot, ci_low, ci_high,
-                                     color=color, alpha=alpha, linewidth=0, zorder=1)
-                elif ci_style in ("bar", "bars", "errorbar"):
-                    xerr = np.vstack([prof - ci_low, ci_high - prof])
-                    ax.errorbar(prof, y_plot, xerr=xerr, fmt="none",
-                                ecolor=color, elinewidth=0.8, capsize=2,
-                                alpha=0.75, zorder=2)
+            draw_ci(ax, y_plot, prof, ci_low, ci_high, color, cfg,
+                    horizontal=True, alpha_default=0.16)
 
             ax.set_xlabel(stat_name)
             ax.set_ylabel(y_label)
@@ -236,7 +226,6 @@ def plot_profile_diff_1d(Profiles, profile_key, stat_name, cfg):
 
     exp_names, exp_labels, colors, linestyles = get_exp_plot_settings(cfg)
     boot    = get_bootstrap_settings(cfg)
-    ci_style = str(cfg.get("profile_ci_style", cfg.get("plot_style", {}).get("profile_ci_style", "shade"))).lower()
     ref_exp = exp_names[0]
 
     nvars, (nrows, ncols) = len(var_names), auto_layout(len(var_names))
@@ -279,13 +268,8 @@ def plot_profile_diff_1d(Profiles, profile_key, stat_name, cfg):
 
             ax.plot(red, y_plot, color=color, linestyle=ls,
                     label=exp_labels[iexp])
-            if ci_style in ("shade", "shading", "fill"):
-                ax.fill_betweenx(y_plot, ci_low, ci_high,
-                                 color=color, alpha=cfg.get("ci_alpha", 0.14), linewidth=0)
-            elif ci_style in ("bar", "bars", "errorbar"):
-                xerr = np.vstack([red - ci_low, ci_high - red])
-                ax.errorbar(red, y_plot, xerr=xerr, fmt="none",
-                            ecolor=color, elinewidth=0.8, capsize=2, alpha=0.75)
+            draw_ci(ax, y_plot, red, ci_low, ci_high, color, cfg,
+                    horizontal=True, alpha_default=0.14)
             if boot["plot_significance"]:
                 # Use the same colour as the corresponding reduction line so
                 # significant levels are visually linked to each experiment.

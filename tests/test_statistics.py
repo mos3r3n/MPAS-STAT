@@ -355,6 +355,40 @@ class TestComparisonMarkers(unittest.TestCase):
         self.assertTrue(np.all(lo <= diff) and np.all(diff <= hi))
 
 
+class TestConfidenceIntervalStyle(unittest.TestCase):
+    def test_get_ci_style(self):
+        from mpas_stat.graphics.style import get_ci_style
+        self.assertEqual(get_ci_style({}), "shade")
+        self.assertEqual(get_ci_style({"ci_style": "errorbar"}), "errorbar")
+        self.assertEqual(get_ci_style({"ci_style": "bars"}), "errorbar")
+        self.assertEqual(get_ci_style({"plot_style": {"ci_style": "none"}}), "none")
+        self.assertEqual(get_ci_style({"profile_ci_style": "errorbar"}), "errorbar")  # older key
+        self.assertEqual(get_ci_style({"profile_errorbar": False}), "none")
+        with self.assertRaises(ValueError):
+            get_ci_style({"ci_style": "dots"})
+
+    def test_draw_ci(self):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from mpas_stat.graphics.style import draw_ci
+        x, y = np.arange(3.0), np.array([1.0, 2.0, 3.0])
+        for style, horizontal in (("shade", False), ("shade", True), ("errorbar", False),
+                                  ("errorbar", True), ("none", False)):
+            fig, ax = plt.subplots()
+            draw_ci(ax, x, y, y - 0.5, y + 0.5, "blue", {"ci_style": style}, horizontal=horizontal)
+            self.assertEqual(len(ax.collections) > 0, style != "none", style)
+            if style == "errorbar":
+                self.assertEqual(len(ax.containers), 1)
+            plt.close(fig)
+
+    def test_obs_cfg_passes_ci_style(self):
+        from mpas_stat.obs.experiments import _ci_display_settings
+        self.assertEqual(_ci_display_settings({"plot_settings": {"ci_style": "errorbar", "ci_alpha": 0.3}}),
+                         {"ci_style": "errorbar", "ci_alpha": 0.3})
+        self.assertEqual(_ci_display_settings({"plot_settings": {}}), {})
+
+
 class TestDatelineDomains(unittest.TestCase):
     def test_mask_crosses_dateline(self):
         lon = np.array([175.0, -175.0, 0.0, -170.0])

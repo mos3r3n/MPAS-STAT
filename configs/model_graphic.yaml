@@ -6,6 +6,10 @@ paths:
 
 figure_format: "pdf"
 
+# Bootstrap confidence intervals on line and profile plots:
+# "shade" (coloured band), "errorbar" (error bars) or "none".
+ci_style: shade
+
 # Render figures in parallel across this many worker processes (each job is
 # one figure's collect+plot step -- see run_graphics() in
 # src/mpas_stat/graphics/driver.py). 1 = sequential (default, unchanged

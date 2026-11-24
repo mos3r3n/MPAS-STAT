@@ -111,6 +111,7 @@ temperature (before 2026-11, `Tv` mistakenly returned potential temperature).
 | `plot_types` | Which figures to generate — see §1.5 |
 | `forecast.*`, `scorecard.*`, `level_slices` | Extended-forecast / scorecard / 2-D-slice-specific settings |
 | `time_aggregation` | How cycles are combined: `pooled` (default) or `mean` — §5.2 |
+| `ci_style` | Bootstrap confidence intervals on line/profile plots: `shade` (coloured band, default), `errorbar`, or `none`. `ci_alpha` sets the band opacity. (Older `profile_ci_style` / `profile_errorbar: false` still work.) |
 
 ### 1.5 Available `plot_types` (model-space)
 
@@ -591,7 +592,10 @@ statistics:
   time_aggregation: pooled  # or "mean"
 ```
 
-See §5 for what each setting does. Domain boxes (`domains`, and
+See §5 for what each setting does. `plot_settings.ci_style` (`shade`,
+`errorbar` or `none`) chooses how confidence intervals are drawn on the
+obs-space line and profile plots, as `ci_style` does for model space.
+Domain boxes (`domains`, and
 `plot_settings.latlon_domain`) may cross the dateline: write them as
 `[lat_min, lat_max, 170, -170]` or `[lat_min, lat_max, 170, 190]`.
 

@@ -90,6 +90,7 @@ from .common import (
 )
 from .experiments import (
     _base_graphic_cfg,
+    _ci_display_settings,
     _build_forecast_experiments,
     _comparison_graphic_cfg,
     _experiments_for_diagtype,
@@ -450,6 +451,7 @@ def generate_forecast_lead_graphics(config, diag_obs, graphic_out_dir, diag_base
         "paths": {"out_dir": graphic_out_dir},
         "figure_format": config["plot_settings"].get("figure_format", "png"),
         "bootstrap": config.get("bootstrap", {}),
+        **_ci_display_settings(config),
     }
 
     jobs = []
@@ -518,6 +520,8 @@ def generate_forecast_profile_graphics(config, diag_obs, graphic_out_dir, diag_b
         },
         "paths": {"out_dir": graphic_out_dir},
         "figure_format": config["plot_settings"].get("figure_format", "png"),
+        "bootstrap": config.get("bootstrap", {}),
+        **_ci_display_settings(config),
     }
 
     jobs = []

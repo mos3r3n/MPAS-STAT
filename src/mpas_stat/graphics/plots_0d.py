@@ -17,6 +17,7 @@ from .style import (
     _title_with_panel,
     apply_pub_style,
     auto_layout,
+    draw_ci,
     get_exp_plot_settings,
     is_relative_stat,
     significant_from_ci,
@@ -209,8 +210,6 @@ def plot_forecast_lead_0d(ForecastLead, stat_name, cfg):
     var_names   = cfg["variables"]
     region_name = cfg.get("region", "global")
     out_dir     = _section_out_dir(cfg, "forecast_lead_0d")
-    ci_style    = str(cfg.get("profile_ci_style",
-                              cfg.get("plot_style", {}).get("profile_ci_style", "shade"))).lower()
     boot = get_bootstrap_settings(cfg)
 
     exp_names, exp_labels, colors, linestyles = get_exp_plot_settings(cfg)
@@ -254,13 +253,8 @@ def plot_forecast_lead_0d(ForecastLead, stat_name, cfg):
                     linestyle=linestyles[iexp % len(linestyles)])
 
             if "ci_low" in entry and "ci_high" in entry:
-                if ci_style == "shade":
-                    ax.fill_between(x, entry["ci_low"], entry["ci_high"],
-                                    color=color, alpha=0.15, linewidth=0)
-                elif ci_style == "errorbar":
-                    yerr = np.vstack([y - entry["ci_low"], entry["ci_high"] - y])
-                    ax.errorbar(x, y, yerr=yerr, color=color, fmt="none",
-                               capsize=2, alpha=0.6)
+                draw_ci(ax, x, y, entry["ci_low"], entry["ci_high"], color, cfg,
+                        alpha_default=0.15)
 
             # --- Significance vs. the reference/control experiment ---
             # Re-uses the same per-cycle samples matrix (n_cycles x n_leads)
@@ -338,8 +332,6 @@ def plot_forecast_lead_diff_0d(ForecastLead, stat_name, cfg):
 
     exp_names, exp_labels, colors, linestyles = get_exp_plot_settings(cfg)
     boot     = get_bootstrap_settings(cfg)
-    ci_style = str(cfg.get("profile_ci_style",
-                          cfg.get("plot_style", {}).get("profile_ci_style", "shade"))).lower()
     ref_exp  = exp_names[0]
 
     nvars, (nrows, ncols) = len(var_names), auto_layout(len(var_names))
@@ -377,13 +369,7 @@ def plot_forecast_lead_diff_0d(ForecastLead, stat_name, cfg):
 
             ax.plot(x, red, color=color, linestyle=ls, marker="o",
                     label=exp_labels[iexp])
-            if ci_style in ("shade", "shading", "fill"):
-                ax.fill_between(x, ci_low, ci_high, color=color,
-                                alpha=cfg.get("ci_alpha", 0.14), linewidth=0)
-            elif ci_style in ("bar", "bars", "errorbar"):
-                yerr = np.vstack([red - ci_low, ci_high - red])
-                ax.errorbar(x, red, yerr=yerr, fmt="none",
-                           ecolor=color, elinewidth=0.8, capsize=2, alpha=0.75)
+            draw_ci(ax, x, red, ci_low, ci_high, color, cfg, alpha_default=0.14)
             if boot["plot_significance"]:
                 ax.scatter(x[significant], red[significant],
                           color=color, s=14, marker="o",
