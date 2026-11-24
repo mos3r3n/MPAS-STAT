@@ -20,7 +20,9 @@ from ..core.pooling import (
 )
 from ..core.timeutils import datetime_to_cycle
 from .common import (
+    ERROR_DIAG_KEYS,
     STAT_KEYS,
+    SPREAD_SKILL_KEYS,
     STAT_KEYS_2D,
     nc_group_name,
     obs_diag_file,
@@ -629,4 +631,192 @@ def collect_obs_forecast_time_level_2d(diag_base_dir, exp_name, diag_obs, cycles
             "coord_label": coord_label,
             "invert_y":    invert_y,
         }
+    return out
+
+
+def _error_diag_entries(ncfiles, display_vars, raw_vars, group_path, coord_vars,
+                        time_aggregation):
+    """{var: {name: value}} of the error-consistency quantities in the omb
+    group at `group_path` (see collect_obs_error_profiles), plus "Count".
+    Returns (coords, entries); coords is None when no file had the group's
+    coordinates."""
+    names = [k for k, _ in ERROR_DIAG_KEYS] + ["RMS", "TotalSpread", "Count", "Bias"]
+    keys = [(n, n) for n in names]
+    coords, per_stat_per_var, _ = _gather_stat_arrays(
+        ncfiles, "omb", display_vars, raw_vars, group_path, keys, coord_vars)
+
+    def value(name, var):
+        arrs = per_stat_per_var[name][var]
+        if not arrs:
+            return None
+        if name == "Count":
+            return np.nansum(np.stack(arrs, axis=0), axis=0)
+        pool = _obs_pool(per_stat_per_var, name, var) if time_aggregation == "pooled" else None
+        if pool is not None:
+            return pooled_value(pool)
+        return np.nanmean(np.stack(arrs, axis=0), axis=0)
+
+    out = {}
+    for var in display_vars:
+        entry = {}
+        for name, _ in ERROR_DIAG_KEYS:
+            v = value(name, var)
+            if v is not None and np.any(np.isfinite(v)):
+                entry[name] = v
+        rms, tot = value("RMS", var), value("TotalSpread", var)
+        if rms is not None and tot is not None:
+            with np.errstate(invalid="ignore", divide="ignore"):
+                cr = np.where(rms > 0, tot / rms, np.nan)
+            if np.any(np.isfinite(cr)):
+                entry["ConsistencyRatio"] = cr
+        if entry:
+            count = value("Count", var)
+            if count is not None:
+                entry["Count"] = count
+            out[var] = entry
+    return coords, out
+
+
+def collect_obs_error_profiles(diag_base_dir, exp_name, diag_obs, cycles, display_vars,
+                               raw_vars, profile_key, coord_label, invert_y,
+                               time_aggregation="pooled"):
+    """Observation-error consistency profiles of one "da" experiment from its
+    OMB statistics: ObsErrorAssumed, ObsErrorDesroziers, BkgErrorDesroziers
+    (when the statistics stage wrote them), Count and, when an ensemble
+    spread was written, ConsistencyRatio = TotalSpread / RMS. Each is
+    aggregated over cycles like the other statistics (pooled by Count by
+    default; Count is summed)."""
+    ncfiles = [obs_diag_file(diag_base_dir, exp_name, diag_obs, c) for c in cycles]
+    coords, entries = _error_diag_entries(
+        ncfiles, display_vars, raw_vars, ("1D", profile_key), ["Levels"], time_aggregation)
+    if coords is None:
+        return {}
+    coord, = coords
+    return {var: dict(entry, coord=coord, coord_label=coord_label, invert_y=invert_y)
+            for var, entry in entries.items()}
+
+
+def collect_obs_error_totals(diag_base_dir, exp_name, diag_obs, cycles, display_vars,
+                             raw_vars, domain, time_aggregation="pooled"):
+    """Same quantities as collect_obs_error_profiles, for the whole domain
+    (all levels together, the 0D group): {var: {name: scalar}}."""
+    ncfiles = [obs_diag_file(diag_base_dir, exp_name, diag_obs, c) for c in cycles]
+    _, entries = _error_diag_entries(
+        ncfiles, display_vars, raw_vars, ("0D", domain), [], time_aggregation)
+    return {var: {k: float(np.asarray(v).reshape(-1)[0]) for k, v in e.items()}
+            for var, e in entries.items()}
+
+
+# ----------------------------------------------------------------------------
+# Ensemble reliability (rank histograms, spread-skill) -- OMB of experiments
+# with n_member > 1, written by the statistics stage when
+# statistics.ensemble_diagnostics is on. Counts and bin moments are summed /
+# count-weighted over cycles.
+# ----------------------------------------------------------------------------
+def _read_group_vars(ncfile, path, names):
+    """{name: array} for the variables of netCDF group `path` that exist."""
+    out = {}
+    if not os.path.exists(ncfile):
+        return out
+    with nc.Dataset(ncfile, "r") as ds:
+        grp = _subgroup(ds, path)
+        if grp is None:
+            return out
+        for n in names:
+            if n in grp.variables:
+                out[n] = np.asarray(grp.variables[n][...], dtype=np.float64)
+        if "SpreadBinEdges" in ds.variables:
+            out["_edges"] = np.asarray(ds.variables["SpreadBinEdges"][:], dtype=np.float64)
+        if "Levels" in ds.variables:
+            out["_levels"] = np.asarray(ds.variables["Levels"][:], dtype=np.float64)
+    return out
+
+
+def collect_obs_rank_histograms(diag_base_dir, exp_name, diag_obs, cycles, display_vars,
+                                raw_vars, domain, profile_key=None):
+    """{var: {"hist": counts (n_rank,), "hist_levels": (n_lev, n_rank) or
+    None, "coord": levels or None}} summed over cycles."""
+    out = {}
+    files = [obs_diag_file(diag_base_dir, exp_name, diag_obs, c) for c in cycles]
+    for var, raw in zip(display_vars, raw_vars):
+        g = nc_group_name(raw)
+        total, levels_total, coord = None, None, None
+        for f in files:
+            d0 = _read_group_vars(f, ("omb", g, "0D", domain), ["RankHistogram"])
+            if "RankHistogram" in d0:
+                h = np.nan_to_num(d0["RankHistogram"])
+                total = h if total is None else total + h
+            if profile_key:
+                d1 = _read_group_vars(f, ("omb", g, "1D", profile_key), ["RankHistogram"])
+                if "RankHistogram" in d1:
+                    h = np.nan_to_num(d1["RankHistogram"])
+                    levels_total = h if levels_total is None else levels_total + h
+                    coord = d1.get("_levels", coord)
+        if total is not None and total.sum() > 0:
+            out[var] = {"hist": total, "hist_levels": levels_total, "coord": coord}
+    return out
+
+
+def merge_spread_bins(count, moments, n_groups=10, min_count=50):
+    """Merge fine spread bins into up to `n_groups` groups of roughly equal
+    observation count. `moments` maps name -> per-bin mean (count-weighted
+    when merged). Returns (group counts, {name: group means})."""
+    count = np.nan_to_num(np.asarray(count, dtype=np.float64))
+    total = count.sum()
+    if total <= 0:
+        return np.zeros(0), {k: np.zeros(0) for k in moments}
+    cum = np.cumsum(count)
+    group = np.minimum((n_groups * (cum - 0.5 * count) / total).astype(int), n_groups - 1)
+    out_c, out_m = [], {k: [] for k in moments}
+    for gi in range(n_groups):
+        sel = (group == gi) & (count > 0)
+        c = count[sel].sum()
+        if c < min_count:
+            continue
+        out_c.append(c)
+        for k, m in moments.items():
+            mm = np.asarray(m, dtype=np.float64)[sel]
+            ok = np.isfinite(mm)
+            out_m[k].append(np.sum(count[sel][ok] * mm[ok]) / max(count[sel][ok].sum(), 1.0)
+                            if ok.any() else np.nan)
+    return np.asarray(out_c), {k: np.asarray(v) for k, v in out_m.items()}
+
+
+def collect_obs_spread_skill(diag_base_dir, exp_name, diag_obs, cycles, display_vars,
+                             raw_vars, domain, n_groups=10, min_count=50):
+    """{var: {"count", "total_spread", "spread", "rms", "std"}} -- one value
+    per spread group (see merge_spread_bins), pooled over cycles: total
+    spread, ensemble spread and RMS / STD of OMB of the observations whose
+    total spread falls in each group."""
+    names = [k for k, _ in SPREAD_SKILL_KEYS]
+    files = [obs_diag_file(diag_base_dir, exp_name, diag_obs, c) for c in cycles]
+    out = {}
+    for var, raw in zip(display_vars, raw_vars):
+        g = nc_group_name(raw)
+        cnt, sums = None, {}
+        for f in files:
+            d = _read_group_vars(f, ("omb", g, "0D", domain), names)
+            if "SpreadSkillCount" not in d:
+                continue
+            c = np.nan_to_num(d["SpreadSkillCount"])
+            cnt = c if cnt is None else cnt + c
+            for k in names[1:]:
+                if k in d:
+                    sums[k] = sums.get(k, 0.0) + c * np.nan_to_num(d[k])
+        if cnt is None or cnt.sum() <= 0:
+            continue
+        with np.errstate(invalid="ignore", divide="ignore"):
+            means = {k: np.where(cnt > 0, s / cnt, np.nan) for k, s in sums.items()}
+        gc, gm = merge_spread_bins(cnt, means, n_groups=n_groups, min_count=min_count)
+        if gc.size == 0:
+            continue
+        with np.errstate(invalid="ignore"):
+            ms, mean = gm.get("SpreadSkillOMBMS"), gm.get("SpreadSkillOMBMean")
+            out[var] = {
+                "count": gc,
+                "total_spread": np.sqrt(gm["SpreadSkillTotalSpreadMS"]),
+                "spread": np.sqrt(gm["SpreadSkillSpreadMS"]) if "SpreadSkillSpreadMS" in gm else None,
+                "rms": np.sqrt(ms),
+                "std": np.sqrt(np.maximum(ms - mean * mean, 0.0)),
+            }
     return out

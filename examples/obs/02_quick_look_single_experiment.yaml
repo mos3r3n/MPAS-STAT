@@ -1,0 +1,49 @@
+# =============================================================================
+# 02  Quick look at a single experiment
+# =============================================================================
+# Fast sanity check while an experiment is still running: a few sensors,
+# global domain only, no 2-D maps, no scorecard (nothing to compare with).
+# Good for spotting a broken observation stream or a diverging run early.
+#
+#   mpas-stat-obs       02_quick_look_single_experiment.yaml
+#   mpas-stat-obs-plot  02_quick_look_single_experiment.yaml
+#
+# Look at:  <graphic_dir>/<sensor>/time_series_0d/  (Count and RMS per cycle)
+#           <graphic_dir>/<sensor>/profiles_1d/
+# =============================================================================
+
+paths:
+  da_dir: /path/to/mpasjedi_runs
+  hofx_dir: /path/to/mpasjedi_runs
+  diag_dir: /path/to/mpasjedi_runs
+  graphic_dir: /path/to/verify_obs/quick_look
+
+experiments:
+  names: [exp_test]
+  labels: [Test]
+  types: [da]
+  outerloop: [2]
+  n_member: [1]
+
+sensors: [sondes, aircraft, amsua_n19]
+
+domains:
+  global: [null, null, null, null]
+
+plot_settings:
+  plot_oma: true
+  apply_domains: [global]
+  figure_format: png
+  generate_lat_lon_2d: false
+  generate_time_level_2d: false
+  generate_lat_vert_2d: false
+  scorecard: false                      # needs two experiments anyway
+  write_error_tables: false
+
+time_settings:
+  start_time: "2024-09-13 00:00:00"
+  end_time: "2024-09-15 18:00:00"
+  interval: 6
+
+statistics:
+  method: weighted

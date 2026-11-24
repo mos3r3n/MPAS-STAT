@@ -1,0 +1,43 @@
+# =============================================================================
+# Model space 01  Statistics input: global mesh, deterministic
+# =============================================================================
+# Verifies one MPAS forecast/background file against the verifying analysis
+# (init file) and writes one mpasstat.<date>.nc. The batch scripts
+# (scripts/run_verify_model.ksh, run_verify_model_fcst.ksh) fill the file
+# names per cycle; for a manual run, give real paths:
+#
+#   mpas-stat-model -c 01_stats_input_global.yaml
+#
+# The graphics stage then reads
+#   <base_dir>/<exp>/VerifyModel/<cycle>/mpasstat.<date>.nc
+# =============================================================================
+
+forecast_file: /path/to/exp_test/CyclingFC/2024091306/mpasout.2024-09-13_12.00.00.nc
+init_file: /path/to/analyses/2024091312/x1.40962.init.2024-09-13_12.00.00.nc
+output_file: /path/to/exp_test/VerifyModel/2024091312/mpasstat.2024-09-13_12.00.00.nc
+n_member: 1
+
+variables: [U, V, T, Qv, RH, U10, V10, T2, Q2, Ps]
+
+lat_bin_width: 5.0          # latitude bins of lat_bin_profile / lat-lon maps
+lon_bin_width: 5.0
+level_bin_size: 6           # model levels per vert_bin_profile bin
+
+pres_levels: [1000.0, 925.0, 850.0, 700.0, 500.0, 400.0, 300.0, 250.0, 200.0, 150.0, 100.0, 50.0, 20.0]
+hgt_levels: [100.0, 500.0, 1000.0, 1500.0, 2000.0, 3000.0, 5000.0, 7000.0, 10000.0, 15000.0, 20000.0]
+height_reference: msl       # msl | agl (height above model terrain)
+
+regions:                    # latitude bands [lat_min, lat_max]
+  Global: [-90.0, 90.0]
+  NHem: [20.0, 90.0]
+  Tropics: [-20.0, 20.0]
+  SHem: [-90.0, -20.0]
+regional: false             # global mesh: grids span the whole globe
+
+statistics_method: weighted # area- and mass-weighted, poolable
+area_weighting: true
+mass_weighting: true
+
+n_processes: 8
+verbose: true
+overwrite: true

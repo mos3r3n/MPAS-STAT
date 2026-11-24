@@ -58,8 +58,15 @@ plot_settings:
   latlon_lon_bin_width: 10.0
   comparison_relative_reduction_statistics: [RMS, STD]
   ci_style: shade           # confidence intervals: shade | errorbar | none
+  # palette: [black, "#d95f02", "#7570b3", "#1b9e77"]   # line colours (default: CVD-safe)
   generate_time_level_2d: true
   generate_lat_vert_2d: true
+  generate_ensemble_diagnostics: true   # rank histograms / spread-skill (ensembles)
+  generate_error_consistency: true   # Desroziers / spread-consistency profiles
+  scorecard:                         # one-page summary per experiment (false = off)
+    statistics: [RMS]
+    levels: null                     # e.g. [850, 500, 250]
+  write_error_tables: true           # Desroziers CSV + YAML (JEDI filter) under <exp>/VerifyOBS/ObsErrorEstimates
 
 time_settings:
   start_time: "2024-09-13 06:00:00"

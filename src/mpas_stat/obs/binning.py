@@ -119,6 +119,31 @@ def calculate_stats(data: np.ndarray, qc: np.ndarray,
     return results
 
 
+def level_bin_index(bin_values: np.ndarray, levels: np.ndarray, bin_method: int,
+                    interval: float = None) -> np.ndarray:
+    """Per-observation index of the level bin calculate_stats() puts it in
+    (same edges), or -1 outside every bin."""
+    levels = np.asarray(levels, dtype=np.float64)
+    vals = np.asarray(bin_values, dtype=np.float64)
+    idx = np.full(vals.shape, -1, dtype=np.int64)
+    if levels.size == 0:
+        return idx
+    if bin_method != 1 and interval is None:
+        interval = float(levels[1] - levels[0]) if levels.size >= 2 else (
+            10.0 if bin_method == 3 else 2.0)
+    log_levels = np.log(levels) if bin_method == 1 else None
+    for ilev, level in enumerate(levels):
+        if bin_method == 1:
+            top = 200000. if ilev == 0 else np.exp((log_levels[ilev] + log_levels[ilev - 1]) / 2.0)
+            bot = 0. if ilev == levels.size - 1 else np.exp(
+                (log_levels[ilev] + log_levels[ilev + 1]) / 2.0)
+        else:
+            bot, top = level - interval / 2., level + interval / 2.
+        with np.errstate(invalid="ignore"):
+            idx[(vals > bot) & (vals <= top) & (idx < 0)] = ilev
+    return idx
+
+
 def _apply_domain_mask(qc: Optional[np.ndarray], lat: np.ndarray, lon: np.ndarray,
                        domain_name: str, domain_coords) -> Optional[np.ndarray]:
     """Combine one domain's lat/lon selection with an optional QC array.

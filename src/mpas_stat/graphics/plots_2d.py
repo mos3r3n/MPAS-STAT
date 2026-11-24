@@ -15,7 +15,14 @@ from .axes import (
     _set_categorical_axis,
     _set_compact_time_axis,
 )
-from .panels import _colourmap_settings, _draw_2d_panels, _mean_colorbar_limits
+from .colour import colour_scale, share_limits
+from .panels import (
+    _colorbar_extend,
+    _colourmap_settings,
+    _draw_2d_panels,
+    _is_diverging,
+    _mean_colorbar_limits,
+)
 from .style import (
     _ensure_panel_ticks,
     _relative_ref_threshold,
@@ -29,6 +36,22 @@ from .style import (
 
 
 # ---------------------------------------------------------------------------
+def _time_level_panel_data(data, ref_data, show_rel, var_name, cfg):
+    """Absolute data, or the percent difference 100*(exp-ref)/ref
+    (negative = lower than the reference) for comparison panels; None when
+    the reference is missing or has a different shape."""
+    if not show_rel:
+        return data
+    if ref_data is None or ref_data.shape != data.shape:
+        return None
+    plot_data = np.full_like(data, np.nan)
+    threshold = _relative_ref_threshold(var_name, cfg)
+    valid = (np.isfinite(ref_data) & np.isfinite(data)
+             & (np.abs(ref_data) >= threshold))
+    plot_data[valid] = 100.0 * (data[valid] - ref_data[valid]) / ref_data[valid]
+    return plot_data
+
+
 def plot_time_level_2d(TimeLev, profile_key, stat_name, cfg):
     """Time × level cross-section.
 
@@ -58,15 +81,26 @@ def plot_time_level_2d(TimeLev, profile_key, stat_name, cfg):
     for ivar, var_name in enumerate(var_names):
         ref_data = (TimeLev.get(ref_exp) or {}).get(var_name, {}).get("data")
 
+        # Pass 1: every panel's data, so a row can share one colour scale.
+        panels = []
         for iexp, exp_name in enumerate(exp_names):
+            entry = (TimeLev.get(exp_name) or {}).get(var_name)
+            plot_data = None
+            if entry is not None:
+                plot_data = _time_level_panel_data(entry["data"], ref_data, use_rel and iexp > 0,
+                                                   var_name, cfg)
+            panels.append((iexp, entry, plot_data))
+        row_data = {rel: [pd for iexp, e, pd in panels
+                          if pd is not None and (use_rel and iexp > 0) == rel]
+                    for rel in (True, False)}
+
+        for iexp, entry, plot_data in panels:
             ax = axs[ivar, iexp]
             panel_id += 1
-            entry = (TimeLev.get(exp_name) or {}).get(var_name)
-            if entry is None:
+            if entry is None or plot_data is None:
                 ax.axis("off")
                 continue
 
-            data   = entry["data"]
             times  = entry["times"]
             levs   = entry["coord"]
             clabel = entry["coord_label"]
@@ -74,23 +108,7 @@ def plot_time_level_2d(TimeLev, profile_key, stat_name, cfg):
 
             show_rel = use_rel and iexp > 0
 
-            if show_rel:
-                if ref_data is None or ref_data.shape != data.shape:
-                    ax.axis("off")
-                    continue
-                plot_data = np.full_like(data, np.nan)
-                threshold = _relative_ref_threshold(var_name, cfg)
-                valid = (np.isfinite(ref_data) & np.isfinite(data)
-                         & (np.abs(ref_data) >= threshold))
-                # Percent difference 100*(exp-ref)/ref: negative = lower
-                # than the reference (improvement for RMS/STD).
-                plot_data[valid] = (100.0
-                                    * (data[valid] - ref_data[valid])
-                                    / ref_data[valid])
-            else:
-                plot_data = data
-
-            cmap, vmin, vmax, cbar_label = _colourmap_settings(
+            cmap_name, vmin, vmax, cbar_label = _colourmap_settings(
                 show_rel, stat_name, cfg, data=plot_data, refname=exp_labels[0])
 
             # For time-level mean statistics, use unified colourbar limits
@@ -109,10 +127,15 @@ def plot_time_level_2d(TimeLev, profile_key, stat_name, cfg):
             use_categorical_y = _is_vertical_categorical_axis(clabel)
             y_plot = _categorical_positions(levs) if use_categorical_y else levs
 
+            cmap, norm, levels = colour_scale(
+                cmap_name, vmin, vmax, cfg, _is_diverging(show_rel, stat_name),
+                extend=_colorbar_extend(cfg, show_rel),
+                data_arrays=row_data[show_rel] if share_limits(cfg) else [plot_data],
+            )
             pcm = ax.pcolormesh(x, y_plot, plot_data.T, shading="auto", rasterized=True,
-                                cmap=cmap, vmin=vmin, vmax=vmax,
+                                cmap=cmap, norm=norm,
                                 **_pixel_edge_kwargs(cfg))
-            _nice_colorbar(fig, ax, pcm, cbar_label, cfg, relative=show_rel)
+            _nice_colorbar(fig, ax, pcm, cbar_label, cfg, relative=show_rel, levels=levels)
             ax.set_title(_title_with_panel(panel_id - 1, f"{exp_labels[iexp]}\u2002{var_name}"))
             ax.set_ylabel(clabel)
 

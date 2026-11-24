@@ -1,0 +1,38 @@
+# =============================================================================
+# Model space 02  Statistics input: regional (limited-area) mesh
+# =============================================================================
+# regional: true sizes the lat/lon grids to the mesh's own extent, so a fine
+# bin width is affordable. Heights above ground (agl) are usually more
+# useful than above sea level over complex terrain.
+#
+#   mpas-stat-model -c 02_stats_input_regional.yaml
+# =============================================================================
+
+forecast_file: /path/to/regional_mpasjedi/exp_test/CyclingFC/2024091306/mpasout.2024-09-13_12.00.00.nc
+init_file: /path/to/regional_analyses/2024091312/seasia.init.2024-09-13_12.00.00.nc
+output_file: /path/to/regional_mpasjedi/exp_test/VerifyModel/2024091312/mpasstat.2024-09-13_12.00.00.nc
+n_member: 1
+
+variables: [U, V, T, Qv, RH, U10, V10, T2, Q2, Ps]
+
+lat_bin_width: 1.0
+lon_bin_width: 1.0
+level_bin_size: 4
+
+pres_levels: [1000.0, 925.0, 850.0, 700.0, 500.0, 400.0, 300.0, 250.0, 200.0, 150.0, 100.0]
+hgt_levels: [100.0, 250.0, 500.0, 1000.0, 1500.0, 2000.0, 3000.0, 5000.0, 7000.0, 10000.0, 15000.0]
+height_reference: agl
+
+regions:
+  Global: [-90.0, 90.0]       # = the whole regional mesh
+  North: [10.0, 30.0]
+  Equatorial: [-10.0, 10.0]
+regional: true
+
+statistics_method: weighted
+area_weighting: true          # variable-resolution meshes: weight by cell area
+mass_weighting: true
+
+n_processes: 8
+verbose: true
+overwrite: true

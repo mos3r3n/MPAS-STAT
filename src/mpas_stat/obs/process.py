@@ -11,9 +11,13 @@ from .binning import (
     calculate_stats,
     compute_stats_2d_lat_vert,
     compute_stats_2d_latlon,
+    level_bin_index,
 )
 from .bounds import _resolve_latlon_bounds_for
 from .common import (
+    ERROR_DIAG_KEYS,
+    SPREAD_BIN_EDGES,
+    SPREAD_SKILL_KEYS,
     STAT_KEYS_2D,
     generate_cycles,
     generate_forecast_leads,
@@ -25,7 +29,7 @@ from .common import (
     resolve_statistics_settings,
     resolve_time_settings,
 )
-from .matching import restrict_to_common_sample
+from .matching import paired_indices, restrict_to_common_sample
 from .reader import (
     build_filename,
     build_hofx_forecast_filename,
@@ -111,7 +115,8 @@ def _resolve_stat_grids(config: Dict, diag_obs: str, obs_config, bin_method: int
 
 
 def _allocate_results(tags, lead_shape: Tuple[int, ...], grids: Dict,
-                      num_exp: int, num_dom: int, num_time: int, num_var: int) -> Dict:
+                      num_exp: int, num_dom: int, num_time: int, num_var: int,
+                      error_diag=(), n_rank: int = 0) -> Dict:
     """NaN-filled result arrays for every diagtype in `tags` ("omb"/"oma"
     for cycling DA, "omf" for extended forecasts).
 
@@ -134,6 +139,18 @@ def _allocate_results(tags, lead_shape: Tuple[int, ...], grids: Dict,
             results[f"{stat}_{tag}"] = np.full(zero_d, np.nan)
         for stat in _INNOV_STATS + _SPREAD_FIELDS:
             results[f"{stat}_{tag}_bin"] = np.full(one_d, np.nan)
+
+    for prefix in error_diag:
+        results[f"{prefix}_omb"] = np.full(zero_d, np.nan)
+        results[f"{prefix}_omb_bin"] = np.full(one_d, np.nan)
+
+    if n_rank > 1:
+        nsb = len(SPREAD_BIN_EDGES) - 1
+        results["rank_omb"] = np.zeros(zero_d + (n_rank,))
+        results["rank_omb_bin"] = np.zeros(one_d + (n_rank,))
+        for _, prefix in SPREAD_SKILL_KEYS:
+            fill = 0.0 if prefix == "ss_count" else np.nan
+            results[f"{prefix}_omb"] = np.full(zero_d + (nsb,), fill)
 
     if grids["gen_2d"]:
         for tag in tags:
@@ -245,8 +262,12 @@ def process_experiment(config: Dict, diag_obs: str) -> Dict:
         ("omb", "oma"), (), grids,
         num_exp=len(config["experiments"]["names"]), num_dom=len(domains),
         num_time=len(times), num_var=len(obs_config.variables),
+        error_diag=([prefix for _, prefix in ERROR_DIAG_KEYS]
+                    if settings.get("error_diagnostics") else ()),
+        n_rank=_n_rank(config, settings),
     )
     results.update(_metadata(times, levels, obs_config, domains))
+    results["n_member"] = list(config["experiments"]["n_member"])
     results.update(_grid_metadata(grids))
 
     plot_oma = config["plot_settings"].get("plot_oma", True)
@@ -347,12 +368,127 @@ def _store_innovation_stats(results, iexp, it, iv, omb_vec, oma_vec, domains,
         )
         _store_domain_stats(results, "omb", (iexp, idom, it), iv,
                             omb_vec, omb_qc, omb_bins, levels, bin_method, settings)
+        if "rank_omb" in results and omb_vec.get("rank") is not None:
+            _store_ensemble_diagnostics(results, (iexp, idom, it), iv, omb_vec, omb_qc,
+                                        omb_bins, levels, bin_method)
         if has_oma:
             oma_qc = _apply_domain_mask(
                 oma_vec["qc"], oma_vec["lat"], oma_vec["lon"], dom_name, dom_coords,
             )
             _store_domain_stats(results, "oma", (iexp, idom, it), iv,
                                 oma_vec, oma_qc, oma_bins, levels, bin_method, settings)
+
+    if has_oma and settings is not None and settings.get("error_diagnostics"):
+        _store_error_diagnostics(results, (iexp, it), iv, omb_vec, oma_vec,
+                                 domains, levels, bin_method)
+
+
+def _n_rank(config: Dict, settings: Dict) -> int:
+    """Rank-histogram length (largest n_member + 1 among the cycling
+    experiments), or 0 when ensemble diagnostics are off / no ensemble."""
+    if not settings.get("ensemble_diagnostics"):
+        return 0
+    members = [int(n) for n, t in zip(config["experiments"]["n_member"],
+                                      config["experiments"]["types"]) if t != "hofx_forecast"]
+    m = max(members, default=1)
+    return m + 1 if m > 1 else 0
+
+
+def _store_ensemble_diagnostics(results, idx, iv, vec, qc, bin_values, levels,
+                                bin_method) -> None:
+    """Rank-histogram counts (whole domain and per level bin) and
+    spread-skill bin moments of one ensemble OMB vector for one domain."""
+    rank = np.asarray(vec["rank"], dtype=np.float64)
+    innov = np.asarray(vec["innov"], dtype=np.float64)
+    ok = np.isfinite(rank) & np.isfinite(innov)
+    if qc is not None:
+        ok &= (np.asarray(qc) == 0)
+    n_rank = results["rank_omb"].shape[-1]
+    r = rank[ok].astype(np.int64)
+    r = r[(r >= 0) & (r < n_rank)]
+    results["rank_omb"][idx + (iv,)] = np.bincount(r, minlength=n_rank)[:n_rank]
+
+    if bin_values is not None:
+        lev = level_bin_index(bin_values, levels, bin_method)[ok]
+        rr = rank[ok].astype(np.int64)
+        good = (lev >= 0) & (rr >= 0) & (rr < n_rank)
+        counts = np.zeros((len(levels), n_rank))
+        np.add.at(counts, (lev[good], rr[good]), 1.0)
+        results["rank_omb_bin"][idx + (slice(None), iv)] = counts
+
+    tot = vec.get("totSpread")
+    spr = vec.get("spread")
+    if tot is None:
+        return
+    tot = np.asarray(tot, dtype=np.float64)
+    use = ok & np.isfinite(tot) & (tot > 0)
+    if not use.any():
+        return
+    nsb = len(SPREAD_BIN_EDGES) - 1
+    b = np.clip(np.searchsorted(SPREAD_BIN_EDGES, tot[use], side="right") - 1, 0, nsb - 1)
+    count = np.bincount(b, minlength=nsb).astype(np.float64)
+    has = count > 0
+
+    def bin_mean(values):
+        s = np.bincount(b, weights=values, minlength=nsb)
+        out = np.full(nsb, np.nan)
+        out[has] = s[has] / count[has]
+        return out
+
+    d = innov[use]
+    results["ss_count_omb"][idx + (iv,)] = count
+    results["ss_totspread_ms_omb"][idx + (iv,)] = bin_mean(tot[use] ** 2)
+    if spr is not None:
+        results["ss_spread_ms_omb"][idx + (iv,)] = bin_mean(
+            np.nan_to_num(np.asarray(spr, dtype=np.float64)[use]) ** 2)
+    results["ss_omb_ms_omb"][idx + (iv,)] = bin_mean(d * d)
+    results["ss_omb_mean_omb"][idx + (iv,)] = bin_mean(d)
+
+
+def _store_error_diagnostics(results, idx, iv, omb_vec, oma_vec, domains, levels,
+                             bin_method) -> None:
+    """Desroziers observation/background-error estimates and the assumed
+    observation error, per domain and level bin, from observations present
+    (and QC-passed) in both OMB and OMA:
+
+        sigma_o^2 ~ mean((O-A)(O-B)),  sigma_b^2 ~ mean((A-B)(O-B)),
+        assumed   = sqrt(mean(sigma_o_assumed^2))
+
+    (A-B = (O-B) - (O-A).) A negative mean product -- inconsistent with the
+    assumptions behind the estimate -- is stored as NaN."""
+    ia, ib = paired_indices(omb_vec, oma_vec)
+    if ia.size == 0:
+        return
+    d_ob = np.asarray(omb_vec["innov"], dtype=np.float64)[ia]
+    d_oa = np.asarray(oma_vec["innov"], dtype=np.float64)[ib]
+    err = oma_vec.get("obserr") if oma_vec.get("obserr") is not None else omb_vec.get("obserr")
+    if err is not None:
+        err = np.asarray(err, dtype=np.float64)[ib if oma_vec.get("obserr") is not None else ia]
+    lat = np.asarray(omb_vec["lat"])[ia]
+    lon = np.asarray(omb_vec["lon"])[ia]
+    bin_src = _bin_values(omb_vec, bin_method)
+    bins = np.asarray(bin_src)[ia] if bin_src is not None else None
+
+    products = {
+        "obserr_desroziers": d_oa * d_ob,
+        "bkgerr_desroziers": (d_ob - d_oa) * d_ob,
+        "obserr_assumed": err * err if err is not None else None,
+    }
+    num_lev = len(levels)
+    iexp, it = idx
+    for idom, (dom_name, dom_coords) in enumerate(domains.items()):
+        qc = _apply_domain_mask(np.zeros(ia.size), lat, lon, dom_name, dom_coords)
+        for prefix, values in products.items():
+            if values is None:
+                continue
+            stats = calculate_stats(values, qc, bins, levels, bin_method)
+            mean = np.asarray(stats["mean"], dtype=np.float64)
+            with np.errstate(invalid="ignore"):
+                sigma = np.where(mean > 0, np.sqrt(np.where(mean > 0, mean, 0.0)), np.nan)
+            if stats["count"][num_lev] > 0:
+                results[f"{prefix}_omb"][iexp, idom, it, iv] = sigma[num_lev]
+            valid = stats["count"][:num_lev] > 0
+            results[f"{prefix}_omb_bin"][iexp, idom, it, valid, iv] = sigma[:num_lev][valid]
 
 
 def process_forecast_experiment(config: Dict, diag_obs: str) -> Dict:

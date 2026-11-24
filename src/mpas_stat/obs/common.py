@@ -21,6 +21,7 @@ import glob
 import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Union
+import numpy as np
 import yaml
 
 # Cycle/date helpers are owned by the shared graphics I/O module.
@@ -159,6 +160,14 @@ DEFAULT_CONFIG = {
         # pooling of sums, e.g. RMS = sqrt(sum n*rms^2 / sum n)) or "mean"
         # (plain mean of per-cycle statistics).
         "time_aggregation": "pooled",
+        # Desroziers observation/background-error estimates and the assumed
+        # observation error for "da" experiments with OMA (USER_GUIDE 5.6).
+        "error_diagnostics": True,
+        # Ensemble reliability (n_member > 1, OMB): rank histograms and
+        # spread-skill bins (USER_GUIDE 5.7). Members are perturbed with
+        # the observation error before ranking (Hamill 2001).
+        "ensemble_diagnostics": True,
+        "rank_histogram_perturb": True,
     },
 }
 
@@ -170,6 +179,9 @@ _LEGACY_STATISTICS = {
     "spread_finite_ensemble_correction": False,
     "spread_aggregation": "mean",
     "time_aggregation": "mean",
+    "error_diagnostics": False,
+    "ensemble_diagnostics": False,
+    "rank_histogram_perturb": False,
 }
 
 
@@ -283,6 +295,33 @@ STAT_KEYS = [
 # Lat-lon (2-D) gridded statistics only cover the basic moments -- ensemble
 # spread on a lat-lon grid is intentionally out of scope (same as 3-D
 # products).
+# Observation-error consistency diagnostics, stored with the OMB statistics
+# of "da" experiments (statistics.error_diagnostics):
+#   ObsErrorDesroziers = sqrt(mean((O-A)(O-B)))   estimate of the true obs error
+#   BkgErrorDesroziers = sqrt(mean((A-B)(O-B)))   background error in obs space
+#   ObsErrorAssumed    = sqrt(mean(sigma_o^2))     obs error assumed by the DA
+# (Desroziers et al. 2005, QJRMS 131, 3385-3396.)
+# Ensemble reliability diagnostics (statistics.ensemble_diagnostics), OMB of
+# experiments with n_member > 1. Rank histogram counts over the n_member+1
+# ranks, and spread-skill moments in fixed, geometrically spaced bins of the
+# per-observation total spread (SPREAD_BIN_EDGES, 40 per decade), additive
+# over cycles: per bin the count and the mean of TotalSpread^2, Spread^2,
+# OMB^2 and OMB.
+SPREAD_BIN_EDGES = 10.0 ** np.arange(-3.0, 3.0 + 1.0e-9, 0.025)
+SPREAD_SKILL_KEYS = [
+    ("SpreadSkillCount", "ss_count"),
+    ("SpreadSkillTotalSpreadMS", "ss_totspread_ms"),
+    ("SpreadSkillSpreadMS", "ss_spread_ms"),
+    ("SpreadSkillOMBMS", "ss_omb_ms"),
+    ("SpreadSkillOMBMean", "ss_omb_mean"),
+]
+
+ERROR_DIAG_KEYS = [
+    ("ObsErrorDesroziers", "obserr_desroziers"),
+    ("BkgErrorDesroziers", "bkgerr_desroziers"),
+    ("ObsErrorAssumed", "obserr_assumed"),
+]
+
 STAT_KEYS_2D = [
     ("RMS", "rmse"),
     ("Bias", "mean"),
@@ -597,6 +636,9 @@ __all__ = [
     "nc_group_name",
     "STAT_KEYS",
     "STAT_KEYS_2D",
+    "ERROR_DIAG_KEYS",
+    "SPREAD_BIN_EDGES",
+    "SPREAD_SKILL_KEYS",
     "resolve_domains",
     "resolve_statistics_settings",
     "resolve_latlon_bounds",

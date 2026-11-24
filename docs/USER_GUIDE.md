@@ -111,6 +111,9 @@ temperature (before 2026-11, `Tv` mistakenly returned potential temperature).
 | `plot_types` | Which figures to generate — see §1.5 |
 | `forecast.*`, `scorecard.*`, `level_slices` | Extended-forecast / scorecard / 2-D-slice-specific settings |
 | `time_aggregation` | How cycles are combined: `pooled` (default) or `mean` — §5.2 |
+| `colorbar.discrete`, `colorbar.levels_diverging`, `colorbar.levels_sequential`, `colorbar.share` | 2-D colour scales: discrete colour levels at rounded values (default), roughly 20 (diverging) / 16 (sequential) bins, limits shared by every panel of a variable row (`share: row`, default) or per panel (`panel`). Diverging scales are symmetric with 0 on a level boundary. Explicit `relative_reduction_vmin/vmax`, `mean_vmin/vmax`, `absolute_vmin/vmax` still fix the limits. |
+| `plot_style.diverging_cmap`, `plot_style.absolute_cmap` | Colour maps for % differences / mean fields (default `RdBu_r`; `RdYlBu_r` is a good alternative) and for absolute statistics (default `YlGnBu`) |
+| `plot_style.palette` | Experiment line colours when `experiments.colors` is not given. Default: black, then ColorBrewer Dark2 (colour-vision-deficiency safe). Obs space: `plot_settings.palette`. |
 | `ci_style` | Bootstrap confidence intervals on line/profile plots: `shade` (coloured band, default), `errorbar`, or `none`. `ci_alpha` sets the band opacity. (Older `profile_ci_style` / `profile_errorbar: false` still work.) |
 
 ### 1.5 Available `plot_types` (model-space)
@@ -590,11 +593,53 @@ statistics:
   spread_ddof: 1
   spread_finite_ensemble_correction: true
   time_aggregation: pooled  # or "mean"
+  error_diagnostics: true   # Desroziers error estimates (§5.6)
+  ensemble_diagnostics: true    # rank histograms + spread-skill, n_member > 1 (§5.7)
+  rank_histogram_perturb: true  # perturb members with the obs error before ranking
 ```
 
 See §5 for what each setting does. `plot_settings.ci_style` (`shade`,
 `errorbar` or `none`) chooses how confidence intervals are drawn on the
 obs-space line and profile plots, as `ci_style` does for model space.
+The top-level `plot_style` (fonts, `diverging_cmap`, …) and `colorbar`
+(discrete levels, row sharing) blocks work as in the model-space graphics
+config; see `examples/obs/08_publication_figures.yaml`.
+`plot_settings.generate_error_consistency` (default `true`) turns the
+error-consistency profile figures of §5.6 on or off, and
+`plot_settings.write_error_tables` (default `true`) the error tables that go
+with them (`error_table_min_count`, default 100, is the fewest observations a
+level needs to enter the suggested JEDI filter).
+
+#### Scorecard
+
+After the per-sensor figures, one **scorecard** per compared experiment
+summarises everything on a single page:
+`<graphic_dir>/scorecard/scorecard_<omb|oma|omf>_<exp>_vs_<reference>.png`,
+with a CSV of every cell beside it.
+
+- **Rows:** sensor, variable and level. "all" is the whole column, followed
+  by each pressure or height bin from the top down. Radiances get one row per
+  channel.
+- **Columns:** statistic × domain. OMF scorecards also split by forecast lead.
+- **Colour:** % difference 100·(exp − ref)/ref of the cycle-pooled
+  statistic. Negative (blue) means a smaller error than the reference
+  (`experiments.names[0]`).
+- **Markers:** ▲/▼ mark a significant improvement or degradation, using the
+  same paired bootstrap over cycles as the other comparison figures.
+
+```yaml
+plot_settings:
+  scorecard:                # or "scorecard: false" to turn it off
+    statistics: [RMS]       # RMS and/or STD
+    diagtypes: [omb]        # cycling: omb and/or oma (OMF is added for hofx_forecast runs)
+    levels: null            # e.g. [850, 500, 250] to show only those bins
+    domains: null           # default: plot_settings.apply_domains
+    leads: null             # OMF: e.g. [24, 72, 120]
+    min_count: 10           # blank cells with fewer pooled observations
+    min_cycles: 5           # no ▲/▼ with fewer cycles than this
+    show_values: true       # print the % difference in each cell
+    limit: null             # colour half-range in %, default automatic
+```
 Domain boxes (`domains`, and
 `plot_settings.latlon_domain`) may cross the dateline: write them as
 `[lat_min, lat_max, 170, -170]` or `[lat_min, lat_max, 170, 190]`.
@@ -1024,7 +1069,7 @@ MPAS-STAT/
 ├── README.md, LICENSE, pyproject.toml, MANIFEST.in
 ├── requirements.txt, environment.yml
 ├── docs/USER_GUIDE.md                        # this guide
-├── examples/                                 # annotated example obs-space configs
+├── examples/                                 # example configs by use case: obs/, model/ (examples/README.md)
 ├── tests/test_smoke.py                       # focused unit tests
 ├── configs/
 │   ├── model_input.yaml                      # model-space statistics config
@@ -1176,3 +1221,114 @@ the observation error.
   that resemble it, especially at short lead times. Prefer observation-space
   results for analysis-time and early-lead conclusions.
 
+### 5.6 Observation and background error consistency
+
+For experiments that have both OMB and OMA (`da` runs with an analysis
+outer loop) the statistics files carry three extra variables in the `omb`
+group, for every domain and vertical bin:
+
+| Variable | Definition |
+|---|---|
+| `ObsErrorDesroziers` | σo ≈ √mean[(O−A)(O−B)] |
+| `BkgErrorDesroziers` | σb ≈ √mean[(A−B)(O−B)], with A−B = (O−B) − (O−A) |
+| `ObsErrorAssumed` | √mean(σ²) of the error the DA actually used (`EffectiveError<outerloop>`, else `ObsError`) |
+
+They are computed on observations that passed QC in both OMB and OMA
+(matched by location and time, so a separate, reordered analysis file is
+fine) and are pooled over cycles in mean-square form. The figure
+`error_consistency_1d/` shows, per variable, the assumed error with the
+two Desroziers estimates (top row) and two ratios (bottom row):
+
+- **Desroziers σo / assumed σo.** Below 1: the assigned observation error is
+  larger than the data suggest (observations under-weighted); above 1:
+  too small (over-weighted).
+- **Consistency ratio** TotalSpread / RMS(OMB) (ensemble runs). Below 1:
+  the ensemble is under-dispersive; above 1: over-dispersive.
+
+The Desroziers estimates are exact only when the analysis used the correct
+error statistics; treat them as a consistency check, not a tuning answer
+(Desroziers et al. 2005, *QJRMS* 131, 3385–3396). Values are written only by
+`method: weighted` with `error_diagnostics: true`; radiances are shown for
+the global domain only, and surface obs get no profile figure.
+
+**Exported tables.** The graphics stage also writes, for every experiment
+with OMA and every sensor,
+
+```
+<diag_dir>/<exp>/VerifyOBS/ObsErrorEstimates/
+    desroziers_<sensor>_<first cycle>-<last cycle>.csv
+    desroziers_<sensor>_<first cycle>-<last cycle>.yaml
+```
+
+To write only these (no figures), run
+`mpas-stat-obs-errors -c obs_graphic.yaml` (or
+`python -m mpas_stat.cli.obs_errors -c obs_graphic.yaml`).
+
+- The **CSV** has one row per variable, domain and level, plus an `all`
+  row per variable and domain: count, assumed error, Desroziers σo and σb,
+  their ratio and (ensembles) the consistency ratio. Units are those of the
+  statistics files (specific humidity in g/kg).
+- The **YAML** holds the global-domain profiles in IODA units (specific
+  humidity in kg/kg) and, per variable, a UFO filter that assigns the
+  Desroziers σo:
+
+  ```yaml
+  jedi_filter:
+    filter: Perform Action
+    filter variables: [{name: airTemperature}]
+    action:
+      name: assign error
+      error function:
+        name: ObsFunction/ObsErrorModelStepwiseLinear
+        options:
+          xvar: {name: MetaData/pressure}     # Pa (MetaData/height in m for height bins)
+          xvals: [100000, 92500, ...]
+          errors: [1.21, 1.05, ...]
+  ```
+
+  For radiances it is one `error parameter vector` over the channels.
+
+The "assumed" error is the effective error, i.e. after any QC inflation, so
+assigning σo directly as the prior error lets later filters inflate it
+again; scaling your existing error model by the ratio is the alternative.
+Review the numbers, iterate (re-run the DA and diagnose again) and do not
+apply them blindly.
+
+### 5.7 Ensemble reliability: rank histograms and spread-skill
+
+For cycling experiments with `n_member > 1`, the statistics stage also
+writes, in the `omb` group:
+
+| Variable | Where | Meaning |
+|---|---|---|
+| `RankHistogram` | `0D/<domain>` (`nRank` = n_member + 1) and `1D/<profile>` (level × rank) | how many observations fall at each rank among the members |
+| `SpreadSkillCount`, `SpreadSkillTotalSpreadMS`, `SpreadSkillSpreadMS`, `SpreadSkillOMBMS`, `SpreadSkillOMBMean` | `0D/<domain>` (`nSpreadBins`) | per-bin count and mean squares, in fixed bins of the per-observation total spread (`SpreadBinEdges`, 40 per decade) |
+
+Before ranking, every member value is perturbed with a random draw from the
+observation error `ObsError` (Hamill 2001, *MWR* 129, 550–560). Without the
+perturbation, a perfectly reliable ensemble still looks under-dispersive,
+because the observations carry their own error. Set
+`rank_histogram_perturb: false` to rank against the raw members.
+
+All of these quantities add across cycles. The figures are drawn when
+`plot_settings.generate_ensemble_diagnostics` is on (the default):
+
+- **`rank_histogram/rank_histogram_<domain>`:** frequency relative to a flat
+  histogram (1 = reliable).
+  - A U shape means the spread is too small; a dome means it is too large; a
+    slope means a bias.
+  - Each panel lists the *outlier ratio*: the share of observations in the two
+    extreme ranks, divided by its expected value 2/(n_member+1).
+  - It also lists Δ, the mean |frequency − 1|, which is 0 when flat.
+- **`rank_histogram/rank_histogram_<profile>_<exp>`:** the same as a rank ×
+  level map (by latitude for radiances), global domain only.
+- **`spread_skill/spread_skill_<domain>`:** observations grouped by total
+  spread into up to `plot_settings.spread_skill.groups` (default 10) groups of
+  about equal count. Groups with fewer than `spread_skill.min_count` (default
+  50) observations are dropped. The plot shows RMS(OMB) against total spread
+  per group; points above the 1:1 line mean the spread is too small for the
+  error.
+
+The total spread includes the assumed observation error, so a mis-specified
+observation error (see §5.6) shows up here too. Read the two diagnostics
+together.

@@ -1,0 +1,62 @@
+# =============================================================================
+# 07  Regional MPAS-JEDI application (limited-area mesh)
+# =============================================================================
+# Example: a regional mesh over Southeast Asia / the Maritime Continent.
+# Sub-domains are lat/lon boxes; a box may cross the dateline (lon_min >
+# lon_max, see "WestPacific"). The 2-D lat-lon grid is bounded by a named
+# domain so its resolution is spent on the mesh, not the whole globe.
+#
+#   mpas-stat-obs       07_regional_domain.yaml
+#   mpas-stat-obs-plot  07_regional_domain.yaml
+#
+# Keep `domains` and the 2-D grid settings identical in the statistics and
+# graphics runs (one shared file guarantees that). Use a NAMED latlon_domain
+# for per-cycle cluster runs; "auto" detects the box from the observations,
+# which can differ between cycles.
+# =============================================================================
+
+paths:
+  da_dir: /path/to/regional_mpasjedi
+  hofx_dir: /path/to/regional_mpasjedi
+  diag_dir: /path/to/regional_mpasjedi
+  graphic_dir: /path/to/verify_obs/regional
+
+experiments:
+  names: [reg_3denvar, reg_3denvar_radar]
+  labels: [3DEnVar, 3DEnVar + radar]
+  types: [da, da]
+  outerloop: [2, 2]
+  n_member: [1, 1]
+
+sensors: [sondes, aircraft, satwind, sfc, gnssrorefncep, amsua_n19, mhs_metop-b]
+
+domains:
+  global: [null, null, null, null]               # = whole regional mesh here
+  mesh: [-15.0, 30.0, 85.0, 155.0]               # box used for the 2-D maps
+  MaritimeContinent: [-11.0, 8.0, 95.0, 141.0]
+  SouthChinaSea: [0.0, 23.0, 105.0, 121.0]
+  IndochinaPeninsula: [8.0, 23.0, 97.0, 110.0]
+  WestPacific: [0.0, 30.0, 140.0, -170.0]        # crosses the dateline
+
+plot_settings:
+  plot_oma: true
+  apply_domains: [global, MaritimeContinent, SouthChinaSea, IndochinaPeninsula]
+  figure_format: png
+  generate_lat_lon_2d: true
+  latlon_domain: mesh                   # a key of `domains`, or "global" / "auto"
+  latlon_lat_bin_width: 2.0             # finer than the global default (10)
+  latlon_lon_bin_width: 2.0
+  generate_time_level_2d: true
+  generate_lat_vert_2d: true
+  scorecard:
+    statistics: [RMS]
+    domains: [global, MaritimeContinent, SouthChinaSea]
+
+time_settings:
+  start_time: "2024-09-13 00:00:00"
+  end_time: "2024-09-27 18:00:00"
+  interval: 6
+
+statistics:
+  method: weighted
+  common_sample: true
