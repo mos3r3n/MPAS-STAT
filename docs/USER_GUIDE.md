@@ -604,6 +604,37 @@ error-consistency profile figures of §5.6 on or off, and
 `plot_settings.write_error_tables` (default `true`) the error tables that go
 with them (`error_table_min_count`, default 100, is the fewest observations a
 level needs to enter the suggested JEDI filter).
+
+#### Scorecard
+
+After the per-sensor figures, one **scorecard** per compared experiment
+summarises everything on a single page:
+`<graphic_dir>/scorecard/scorecard_<omb|oma|omf>_<exp>_vs_<reference>.png`,
+with a CSV of every cell beside it.
+
+- **Rows:** sensor, variable and level. "all" is the whole column, followed
+  by each pressure or height bin from the top down. Radiances get one row per
+  channel.
+- **Columns:** statistic × domain. OMF scorecards also split by forecast lead.
+- **Colour:** % difference 100·(exp − ref)/ref of the cycle-pooled
+  statistic. Negative (blue) means a smaller error than the reference
+  (`experiments.names[0]`).
+- **Markers:** ▲/▼ mark a significant improvement or degradation, using the
+  same paired bootstrap over cycles as the other comparison figures.
+
+```yaml
+plot_settings:
+  scorecard:                # or "scorecard: false" to turn it off
+    statistics: [RMS]       # RMS and/or STD
+    diagtypes: [omb]        # cycling: omb and/or oma (OMF is added for hofx_forecast runs)
+    levels: null            # e.g. [850, 500, 250] to show only those bins
+    domains: null           # default: plot_settings.apply_domains
+    leads: null             # OMF: e.g. [24, 72, 120]
+    min_count: 10           # blank cells with fewer pooled observations
+    min_cycles: 5           # no ▲/▼ with fewer cycles than this
+    show_values: true       # print the % difference in each cell
+    limit: null             # colour half-range in %, default automatic
+```
 Domain boxes (`domains`, and
 `plot_settings.latlon_domain`) may cross the dateline: write them as
 `[lat_min, lat_max, 170, -170]` or `[lat_min, lat_max, 170, 190]`.

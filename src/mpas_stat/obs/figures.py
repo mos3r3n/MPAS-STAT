@@ -91,6 +91,7 @@ from .common import (
     resolve_time_settings,
 )
 from .error_export import export_error_estimates
+from .scorecard import generate_scorecards
 from .experiments import (
     _base_graphic_cfg,
     _build_forecast_experiments,
@@ -825,6 +826,7 @@ def main(config_path=None):
     if n_workers == 1 or len(sensor_tasks) == 1:
         for diag_obs, sensor_graphic_dir in sensor_tasks:
             _process_sensor(config, diag_obs, sensor_graphic_dir, diag_base_dir)
+        _scorecards(config, diag_base_dir, [s for s, _ in sensor_tasks])
         return
 
     n_workers = min(n_workers, len(sensor_tasks))
@@ -841,6 +843,16 @@ def main(config_path=None):
                 future.result()
             except Exception:
                 print(f"ERROR processing sensor {diag_obs}:\n{traceback.format_exc()}")
+    _scorecards(config, diag_base_dir, [s for s, _ in sensor_tasks])
+
+
+def _scorecards(config, diag_base_dir, sensors):
+    """All-sensor scorecards, after the per-sensor figures (see
+    mpas_stat.obs.scorecard)."""
+    try:
+        generate_scorecards(config, diag_base_dir, sensors)
+    except Exception:
+        print(f"ERROR drawing scorecards:\n{traceback.format_exc()}")
 
 
 if __name__ == "__main__":

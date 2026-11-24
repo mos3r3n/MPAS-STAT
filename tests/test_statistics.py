@@ -535,6 +535,68 @@ class TestErrorConsistencyDiagnostics(unittest.TestCase):
             self.assertNotIn("ObsErrorDesroziers", ds["omb/airTemperature/0D/global"].variables)
 
 
+class TestScorecard(unittest.TestCase):
+    """The scorecard reports a significant improvement where the test
+    experiment has a smaller background error, and nothing significant
+    where the two experiments are statistically identical."""
+
+    def test_scorecard_cells(self):
+        from mpas_stat.obs.common import load_config
+        from mpas_stat.obs.process import process_experiment
+        from mpas_stat.obs.scorecard import generate_scorecards, scorecard_data, scorecard_settings
+        from mpas_stat.obs.writer import write_obs_diag_files
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp)
+        rng = np.random.default_rng(1)
+        n = 3000
+        cycles = [f"2024091{3 + i // 4}{(i % 4) * 6:02d}" for i in range(8)]
+        for c in cycles:
+            crng = np.random.default_rng(int(c))
+            lat, lon = crng.uniform(-60, 60, n), crng.uniform(0, 360, n)
+            p = crng.uniform(2e4, 1e5, n)
+            for exp, scale in (("ctl", 1.0), ("tst", 0.7)):
+                db = os.path.join(tmp, exp, "CyclingDA", c, "dbOut")
+                os.makedirs(db)
+                with h5py.File(os.path.join(db, "obsout_da_aircraft.h5"), "w") as f:
+                    md = f.create_group("MetaData")
+                    md["latitude"], md["longitude"], md["pressure"] = lat, lon, p
+                    for v in ("windEastward", "windNorthward", "airTemperature"):
+                        s = scale if v == "airTemperature" else 1.0
+                        f.require_group("ombg")[v] = 2.0 * s * rng.standard_normal(n)
+                        f.require_group("oman")[v] = rng.standard_normal(n)
+                        f.require_group("ObsValue")[v] = np.zeros(n)
+                        for g in ("EffectiveQC0", "EffectiveQC2"):
+                            f.require_group(g)[v] = np.zeros(n, "i4")
+        cfg_path = os.path.join(tmp, "cfg.yaml")
+        Path(cfg_path).write_text(
+            f"paths: {{da_dir: {tmp}, hofx_dir: {tmp}, diag_dir: {tmp}, graphic_dir: {tmp}/fig}}\n"
+            "experiments: {names: [ctl, tst], labels: [Control, Test], types: [da, da], "
+            "outerloop: [2, 2], n_member: [1, 1]}\n"
+            "sensors: [aircraft]\ndomains: {global: [null, null, null, null]}\n"
+            "plot_settings: {apply_domains: [global], latlon_domain: global, "
+            "scorecard: {statistics: [RMS], min_cycles: 5}}\n"
+            "time_settings: {start_time: '2024-09-13 00:00:00', "
+            "end_time: '2024-09-14 18:00:00', interval: 6}\n"
+            "bootstrap: {n_boot: 200}\n")
+        config = load_config(cfg_path)
+        write_obs_diag_files(process_experiment(config, "aircraft"), config, "aircraft", tmp)
+        data = scorecard_data(config, tmp, "ctl", "tst", "omb", scorecard_settings(config))
+        rows = data["rows"]
+        t_all = rows.index(("aircraft", "T", "all"))
+        u_all = rows.index(("aircraft", "U", "all"))
+        self.assertAlmostEqual(data["diff"][t_all, 0], -30.0, delta=2.0)
+        self.assertLess(data["hi"][t_all, 0], 0.0)                     # significant
+        self.assertLess(abs(data["diff"][u_all, 0]), 3.0)
+        few = dict(scorecard_settings(config), min_cycles=20)        # 8 cycles only
+        data_few = scorecard_data(config, tmp, "ctl", "tst", "omb", few)
+        self.assertTrue(np.isnan(data_few["hi"]).all())                 # no markers
+        self.assertAlmostEqual(data_few["diff"][t_all, 0], data["diff"][t_all, 0])
+        self.assertGreater(sum(r[1] == "T" for r in rows), 2)          # level rows too
+        files = generate_scorecards(config, tmp)
+        self.assertTrue(any(f.endswith(".png") for f in files))
+        self.assertTrue(any(f.endswith(".csv") for f in files))
+
+
 class TestDatelineDomains(unittest.TestCase):
     def test_mask_crosses_dateline(self):
         lon = np.array([175.0, -175.0, 0.0, -170.0])
