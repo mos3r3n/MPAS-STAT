@@ -58,6 +58,7 @@ from ..graphics.functions import (
     plot_forecast_time_level_2d,
     plot_lat_lon_2d,
     plot_lat_vert_2d,
+    plot_profile_diff_1d,
     plot_profile_reduction_1d,
     plot_profiles_1d,
     plot_rank_histogram,
@@ -76,6 +77,7 @@ from .collect import (
     collect_obs_forecast_time_level_2d,
     collect_obs_lat_lon_2d,
     collect_obs_lat_vert_2d,
+    collect_obs_profile_pools,
     collect_obs_profiles_1d,
     collect_obs_rank_histograms,
     collect_obs_spread_skill,
@@ -293,6 +295,47 @@ def generate_profile_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
                 }
                 jobs.append((plot_profile_reduction_1d,
                             (profiles_omb, profiles_oma, profile_key, cfg_red), {}))
+
+        jobs += _profile_diff_jobs(config, diag_obs, graphic_out_dir, diag_base_dir, cycles,
+                                   display_vars, raw_vars, profile_key, coord_label, invert_y)
+    return jobs
+
+
+def _profile_diff_jobs(config, diag_obs, graphic_out_dir, diag_base_dir, cycles, display_vars,
+                       raw_vars, profile_key, coord_label, invert_y):
+    """Experiment vs. reference (experiments.names[0]) percent-difference
+    profiles, 100*(exp - ref)/ref, with paired-bootstrap significance --
+    O-B against O-B in <graphic_dir>/<sensor>/omb/profile_diff_1d/ and O-A
+    against O-A in .../oma/profile_diff_1d/, never mixed. One figure per
+    statistic in plot_settings.comparison_relative_reduction_statistics."""
+    stats = config["plot_settings"].get("comparison_relative_reduction_statistics",
+                                        ["RMS", "STD"])
+    jobs = []
+    for diagtype in ("omb", "oma"):
+        names, labels, colors = _experiments_for_diagtype(config, diagtype)
+        if len(names) < 2:
+            continue
+        cfg = _comparison_graphic_cfg(config, os.path.join(graphic_out_dir, diagtype),
+                                      names, labels, colors)
+        cfg["variables"] = display_vars
+        cfg["profile_diff_section"] = "profile_diff_1d"
+        what = "O−B (background)" if diagtype == "omb" else "O−A (analysis)"
+        for stat in stats:
+            profiles = {n: collect_obs_profile_pools(diag_base_dir, n, diagtype, diag_obs, cycles,
+                                                     display_vars, raw_vars, profile_key, stat,
+                                                     coord_label, invert_y)
+                        for n in names}
+            if not profiles.get(names[0]) or not any(profiles[n] for n in names[1:]):
+                continue
+            meaning = ("negative = closer to the observations (better background); "
+                       if diagtype == "omb" else
+                       "negative = closer fit to the observations, which is NOT by "
+                       "itself a better analysis; ")
+            c = dict(cfg, profile_diff_title=(
+                f"{what}: {stat} difference from {labels[0]}, 100·(exp − ref)/ref\n"
+                f"{meaning}▲/▼ significant "
+                f"({get_bootstrap_settings(config)['ci']:g}% paired bootstrap over cycles)"))
+            jobs.append((plot_profile_diff_1d, (profiles, profile_key, stat, c), {}))
     return jobs
 
 

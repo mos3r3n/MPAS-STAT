@@ -820,3 +820,45 @@ def collect_obs_spread_skill(diag_base_dir, exp_name, diag_obs, cycles, display_
                 "std": np.sqrt(np.maximum(ms - mean * mean, 0.0)),
             }
     return out
+
+
+def collect_obs_profile_pools(diag_base_dir, exp_name, diagtype, diag_obs, cycles, display_vars,
+                              raw_vars, profile_key, stat_disp, coord_label, invert_y):
+    """{var: entry} with a pooling dict ("pool") and per-cycle "samples",
+    ALIGNED to `cycles` (a missing cycle has weight 0), so two experiments'
+    entries can be compared with the paired bootstrap of
+    mpas_stat.core.pooling.entry_difference_ci (same resampled cycles)."""
+    files = [obs_diag_file(diag_base_dir, exp_name, diag_obs, c) for c in cycles]
+    rows = {v: [None] * len(files) for v in display_vars}
+    coord, nlev = None, None
+    for i, f in enumerate(files):
+        if not os.path.exists(f):
+            continue
+        with nc.Dataset(f, "r") as ds:
+            if coord is None and "Levels" in ds.variables:
+                coord = np.asarray(ds.variables["Levels"][:], dtype=np.float64)
+                nlev = coord.size
+            for var, raw in zip(display_vars, raw_vars):
+                grp = _subgroup(ds, (diagtype, nc_group_name(raw), "1D", profile_key))
+                if grp is None:
+                    continue
+                try:
+                    rows[var][i] = read_components(grp, stat_disp)
+                except KeyError:
+                    pass
+    out = {}
+    if coord is None:
+        return out
+    for var in display_vars:
+        if all(r is None for r in rows[var]):
+            continue
+        comps = [r if r is not None else missing_components((nlev,)) for r in rows[var]]
+        pool = pool_from_rows(stat_disp, [[c] for c in comps])
+        pool = {k: (v[:, 0] if k != "kind" else v) for k, v in pool.items()}
+        samples = np.stack([np.asarray(c[0], dtype=np.float64) for c in comps], axis=0)
+        mean_profile = pooled_value(pool) if stat_kind(stat_disp) != "plain" else \
+            np.nanmean(samples, axis=0)
+        out[var] = {"mean_profile": mean_profile, "samples": samples,
+                    "pool": pool if stat_kind(stat_disp) != "plain" else None,
+                    "coord": coord, "coord_label": coord_label, "invert_y": invert_y}
+    return out

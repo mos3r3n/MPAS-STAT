@@ -188,7 +188,7 @@ def plot_profile_reduction_1d(Profiles_ref, Profiles_exp, profile_key, cfg):
                                       max_ticks=cfg.get("vertical_tick_max", 13))
 
         ax.axvline(0.0, color="0.4", linewidth=0.8, linestyle="--", zorder=0)
-        ax.set_xlabel("RMS: reduction (%)")
+        ax.set_xlabel("RMS reduction O−B → O−A (%)")
         if y_label:
             ax.set_ylabel(y_label)
         ax.set_title(_title_with_panel(ivar, var_name))
@@ -204,7 +204,12 @@ def plot_profile_reduction_1d(Profiles_ref, Profiles_exp, profile_key, cfg):
         print(f"WARNING: no data for RMS reduction profile {profile_key}")
         return
 
-    fig.tight_layout()
+    fig.suptitle("Analysis vs. background WITHIN each experiment: "
+                 "100·(RMS(O−B) − RMS(O−A)) / RMS(O−B)\n"
+                 "positive = analysis closer to the observations  "
+                 "(for Test vs. Control see omb/ and oma/profile_diff_1d)",
+                 fontsize=10, y=1.0)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
     figname = f"profile_{profile_key}_RMS_reduction_pct"
     _save_fig(fig, os.path.join(out_dir, figname), cfg)
 
@@ -222,7 +227,7 @@ def plot_profile_diff_1d(Profiles, profile_key, stat_name, cfg):
         return
 
     var_names = cfg["variables"]
-    out_dir   = _section_out_dir(cfg, "profile_reduction_1d")
+    out_dir   = _section_out_dir(cfg, cfg.get("profile_diff_section", "profile_reduction_1d"))
 
     exp_names, exp_labels, colors, linestyles = get_exp_plot_settings(cfg)
     boot    = get_bootstrap_settings(cfg)
@@ -271,11 +276,15 @@ def plot_profile_diff_1d(Profiles, profile_key, stat_name, cfg):
             draw_ci(ax, y_plot, red, ci_low, ci_high, color, cfg,
                     horizontal=True, alpha_default=0.14)
             if boot["plot_significance"]:
-                # Use the same colour as the corresponding reduction line so
-                # significant levels are visually linked to each experiment.
-                ax.scatter(red[significant], y_plot[significant],
-                           color=color, s=14, marker="o",
-                           edgecolors="none", zorder=5)
+                # Same convention as every comparison figure: ▲ significantly
+                # better (CI below 0), ▼ significantly worse (CI above 0), in
+                # the experiment's colour.
+                better = significant & (ci_high < 0)
+                worse = significant & (ci_low > 0)
+                ax.scatter(red[better], y_plot[better], color=color, s=36, marker="^",
+                           edgecolors="black", linewidths=0.5, zorder=5)
+                ax.scatter(red[worse], y_plot[worse], color=color, s=36, marker="v",
+                           edgecolors="black", linewidths=0.5, zorder=5)
             ax.set_xlabel(f"{stat_name}: diff. (%) from {exp_labels[0]}")
             ax.set_ylabel(y_label)
             if profile_key == "lat_bin_profile":
@@ -303,7 +312,12 @@ def plot_profile_diff_1d(Profiles, profile_key, stat_name, cfg):
     for i in range(nvars, nrows * ncols):
         axs[i].axis("off")
 
-    fig.tight_layout()
+    title = cfg.get("profile_diff_title")
+    if title:
+        fig.suptitle(title, fontsize=10, y=0.995)
+        fig.tight_layout(rect=(0, 0, 1, 0.955))
+    else:
+        fig.tight_layout()
     figname=f"profile_{profile_key}_{stat_name}"
     _save_fig(fig, os.path.join(out_dir, figname), cfg)
 

@@ -167,7 +167,7 @@ def plot_time_series_reduction_0d(Stats_ref, Stats_exp, cfg):
 
         ax.axhline(0.0, color="0.4", linewidth=0.8, linestyle="--")
         ax.set_title(_title_with_panel(ivar, var_name))
-        ax.set_ylabel("RMS: reduction (%)")
+        ax.set_ylabel("RMS reduction O−B → O−A (%)")
         if xlabels:
             _set_compact_time_axis(ax, x, xlabels, cfg, xlabel="Assimilation cycle")
         else:
@@ -184,7 +184,8 @@ def plot_time_series_reduction_0d(Stats_ref, Stats_exp, cfg):
         print("WARNING: no data for RMS reduction time series")
         return
 
-    fig.suptitle(f"RMS Reduction (%)  –  {region_name}", y=1.01)
+    fig.suptitle(f"Analysis vs. background within each experiment: "
+                 f"100·(RMS(O−B) − RMS(O−A)) / RMS(O−B)  –  {region_name}", y=1.01)
     fig.tight_layout()
     figname = f"time_series_RMS_reduction_pct_{region_name}"
     _save_fig(fig, os.path.join(out_dir, figname), cfg)
