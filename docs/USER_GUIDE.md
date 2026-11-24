@@ -601,6 +601,9 @@ statistics:
 See §5 for what each setting does. `plot_settings.ci_style` (`shade`,
 `errorbar` or `none`) chooses how confidence intervals are drawn on the
 obs-space line and profile plots, as `ci_style` does for model space.
+The top-level `plot_style` (fonts, `diverging_cmap`, …) and `colorbar`
+(discrete levels, row sharing) blocks work as in the model-space graphics
+config; see `examples/obs/08_publication_figures.yaml`.
 `plot_settings.generate_error_consistency` (default `true`) turns the
 error-consistency profile figures of §5.6 on or off, and
 `plot_settings.write_error_tables` (default `true`) the error tables that go
@@ -1066,7 +1069,7 @@ MPAS-STAT/
 ├── README.md, LICENSE, pyproject.toml, MANIFEST.in
 ├── requirements.txt, environment.yml
 ├── docs/USER_GUIDE.md                        # this guide
-├── examples/                                 # annotated example obs-space configs
+├── examples/                                 # example configs by use case: obs/, model/ (examples/README.md)
 ├── tests/test_smoke.py                       # focused unit tests
 ├── configs/
 │   ├── model_input.yaml                      # model-space statistics config

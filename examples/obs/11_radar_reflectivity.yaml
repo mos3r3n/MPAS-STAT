@@ -1,0 +1,53 @@
+# =============================================================================
+# 11  Radar composite reflectivity: neighbourhood skill of forecasts
+# =============================================================================
+# Separate opt-in product (docs/USER_GUIDE.md section 2.6): grids observed and
+# forecast composite reflectivity and computes FSS / TS / ETS / FBIAS / POD /
+# FAR with MET grid_stat (METplus must be installed) plus RMSE, vs. lead time.
+#
+#   python -m mpas_stat.cli.radar_stats     11_radar_reflectivity.yaml
+#   python -m mpas_stat.cli.radar_graphics  11_radar_reflectivity.yaml
+#
+# Figures: <graphic_dir>/<sensor>/radar_reflectivity/
+# =============================================================================
+
+paths:
+  da_dir: /path/to/regional_mpasjedi
+  hofx_dir: /path/to/regional_mpasjedi  # <hofx_dir>/<exp>/HofX/<init>/f<HHH>/dbOut/obsout_hofx_radar_zh.h5
+  diag_dir: /path/to/regional_mpasjedi
+  graphic_dir: /path/to/verify_radar
+
+experiments:
+  names: [fc_noradar, fc_radar]
+  labels: [No radar DA, Radar DA]
+  types: [hofx_forecast, hofx_forecast]
+  outerloop: [0, 0]
+  n_member: [1, 1]
+
+sensors: []                             # no point-wise sensors in this run
+
+time_settings:                          # forecast initialization times
+  start_time: "2024-09-13 00:00:00"
+  end_time: "2024-09-20 00:00:00"
+  interval: 6
+
+forecast:
+  start: 1
+  length: 12
+  interval: 1
+
+radar:
+  sensors: [radar_zh]
+  diag_var: equivalentReflectivityFactor
+  thresholds: [20, 30, 40]              # dBZ
+  radii: [3, 5, 9, 15]                  # neighbourhood radius in grid cells
+  sample_bin: 0.027                     # gridding radius (degrees)
+  aggregated_score: false               # true: sum contingency counts over cycles first
+  nbrhd_shape: SQUARE
+  nbrhd_cov_thresh: ">=0.5"
+  run_metplus_cmd: run_metplus.py       # or e.g. [conda, run, -n, metplus, run_metplus.py]
+  metplus_work_dir: null                # null -> <diag_dir>/metplus_scratch
+  metplus_timeout_sec: 600
+  n_workers: 8
+
+n_workers: 4

@@ -1,0 +1,77 @@
+# =============================================================================
+# 01  Compare two cycling DA experiments (control vs. test)
+# =============================================================================
+# The everyday use: did my change to the DA system help? Verifies OMB and OMA
+# of both experiments on ONE common observation sample, draws every standard
+# figure, and summarises everything on one scorecard page.
+#
+# Run (same file for both stages):
+#   mpas-stat-obs       01_compare_two_experiments.yaml    # statistics
+#   mpas-stat-obs-plot  01_compare_two_experiments.yaml    # figures + scorecard
+# For many cycles on a cluster use scripts/run_verify_obs.ksh instead of the
+# first line (one job per experiment and cycle); then run the second line.
+#
+# Look at first:  <graphic_dir>/scorecard/scorecard_omb_exp_test_vs_exp_control.png
+# =============================================================================
+
+paths:
+  da_dir: /path/to/mpasjedi_runs        # <da_dir>/<exp>/CyclingDA/<cycle>/dbOut/obsout_da_<obs>.h5
+  hofx_dir: /path/to/mpasjedi_runs
+  diag_dir: /path/to/mpasjedi_runs      # statistics -> <diag_dir>/<exp>/VerifyOBS/
+  graphic_dir: /path/to/verify_obs/control_vs_test
+
+experiments:
+  names: [exp_control, exp_test]        # the FIRST one is the reference
+  labels: [Control, Test]
+  types: [da, da]                       # da -> OMB + OMA
+  outerloop: [2, 2]                     # outer loop whose OMA is read
+  n_member: [1, 1]
+
+sensors:
+  - sondes
+  - aircraft
+  - satwind
+  - sfc
+  - gnssrorefncep
+  - amsua_n19
+  - amsua_metop-b
+  - mhs_metop-b
+
+domains:
+  global: [null, null, null, null]      # [lat_min, lat_max, lon_min, lon_max]
+  NXTro: [30.0, 90.0, -180.0, 180.0]
+  Tro: [-23.5, 23.5, -180.0, 180.0]
+  SXTro: [-90.0, -30.0, -180.0, 180.0]
+
+plot_settings:
+  plot_oma: true
+  apply_domains: [global, NXTro, Tro, SXTro]
+  figure_format: png
+  generate_lat_lon_2d: true
+  latlon_domain: global
+  latlon_lat_bin_width: 10.0
+  latlon_lon_bin_width: 10.0
+  generate_time_level_2d: true
+  generate_lat_vert_2d: true
+  comparison_relative_reduction_statistics: [RMS, STD]
+  ci_style: shade
+  scorecard:
+    statistics: [RMS, STD]
+    diagtypes: [omb]
+
+time_settings:
+  start_time: "2024-09-13 00:00:00"
+  end_time: "2024-09-27 18:00:00"       # >= 2 weeks gives meaningful significance
+  interval: 6
+
+statistics:
+  method: weighted
+  qc_pass_flags: [0, 19]
+  common_sample: true                   # essential for a fair comparison
+  time_aggregation: pooled
+
+bootstrap:
+  n_boot: 1000
+  ci: 95
+
+n_workers: 4                            # sensors drawn in parallel

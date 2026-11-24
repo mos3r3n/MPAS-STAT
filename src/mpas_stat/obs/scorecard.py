@@ -49,7 +49,11 @@ from .common import (  # noqa: E402
     resolve_domains,
     resolve_time_settings,
 )
-from .experiments import _build_forecast_experiments, _experiments_for_diagtype  # noqa: E402
+from .experiments import (  # noqa: E402
+    _build_forecast_experiments,
+    _ci_display_settings,
+    _experiments_for_diagtype,
+)
 from .sensor_config import display_var_names, get_bin_method, get_obs_config  # noqa: E402
 
 __all__ = ["scorecard_settings", "scorecard_data", "plot_scorecard", "generate_scorecards"]
@@ -273,6 +277,7 @@ def plot_scorecard(data, path, ref_label, exp_label, title_kind, settings, confi
     rows, columns = data["rows"], data["columns"]
     if not rows:
         return None
+    config = dict(config, **_ci_display_settings(config))
     apply_pub_style(config)
     diff = data["diff"]
     nrow, ncol = diff.shape

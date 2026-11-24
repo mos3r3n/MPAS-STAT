@@ -1,0 +1,36 @@
+# =============================================================================
+# Model space 08  Reproduce results from before 2026-11
+# =============================================================================
+# Use together with statistics written with statistics_method: legacy in the
+# input YAML (unweighted kernels, level-averaged errors before squaring,
+# mean of spread). time_aggregation: mean combines cycles as a plain mean
+# of per-cycle statistics, as before. For comparison with old figures only.
+#
+#   mpas-stat-model    -c <input with statistics_method: legacy>
+#   mpas-stat-graphics -c 08_graphic_legacy.yaml
+# =============================================================================
+
+paths:
+  base_dir: /path/to/legacy_stats
+  out_dir: /path/to/verify_model/legacy
+
+figure_format: png
+
+experiments:
+  names: [exp_control, exp_test]
+  labels: [Control, Test]
+
+time:
+  start: 2024091700
+  end: 2024092700
+  interval_hours: 6
+
+variables: [U, V, T, Qv]
+statistics: [rms, mean, std]
+region: Global
+time_aggregation: mean
+
+plot_types:
+  - time_series_0d
+  - profiles_1d
+  - profile_diff_1d

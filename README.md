@@ -61,6 +61,11 @@ PYTHONPATH=src python -m mpas_stat.cli.model_stats --help
 
 ## Quick start
 
+Example configurations for common tasks (comparing experiments, ensembles,
+observation-error tuning, forecasts, radiances, regional meshes, paper
+figures, …) are in [`examples/`](examples/README.md), each with a short
+header on how to run it.
+
 ### 1. Model-space verification
 
 Copy and edit the model configuration:
@@ -92,8 +97,8 @@ writing to `f<HHH>/` subdirectories.
 The observation-space stages read one shared YAML config:
 
 ```bash
-python -m mpas_stat.cli.obs_stats examples/obs_verify_example.yaml
-python -m mpas_stat.cli.obs_graphics examples/obs_verify_example.yaml
+python -m mpas_stat.cli.obs_stats examples/obs/01_compare_two_experiments.yaml
+python -m mpas_stat.cli.obs_graphics examples/obs/01_compare_two_experiments.yaml
 ```
 
 For production runs, use the same layout as model space:
@@ -113,7 +118,7 @@ writes only its own files.
 ### 3. Observation-space forecast skill (OMF)
 
 Use an experiment with `types: [hofx_forecast]` and a `forecast:` block; see
-`examples/obs_forecast_example.yaml`. For production runs,
+`examples/obs/05_extended_forecast_omf.yaml`. For production runs,
 `scripts/run_verify_obs_fcst.ksh` loops over initialization cycles and
 forecast hours (like `run_verify_model_fcst.ksh`), writing to
 `<main_dir>/<exp>/VerifyOBS/<init>/f<HHH>/`.
@@ -184,7 +189,7 @@ MPAS-STAT/
 │   ├── radar/                        # optional radar product
 │   └── cli/                          # command-line entry points
 ├── docs/USER_GUIDE.md                # full documentation
-├── examples/                         # annotated obs-space configs
+├── examples/                         # example configs by use case (obs/, model/; see examples/README.md)
 ├── tests/                            # unit tests (test_smoke.py, test_structure.py)
 └── legacy/radar_reflectivity_verify.py
 ```

@@ -1,0 +1,70 @@
+# =============================================================================
+# 06  Satellite radiance monitoring
+# =============================================================================
+# Radiances are binned by latitude (no vertical levels); each channel is a
+# "variable". Useful to monitor bias, departures and error consistency per
+# channel, and to export per-channel Desroziers errors
+# (UFO "error parameter vector").
+#
+#   mpas-stat-obs       06_radiance_monitoring.yaml
+#   mpas-stat-obs-plot  06_radiance_monitoring.yaml
+#
+# Channels per sensor are set in src/mpas_stat/obs/sensor_config.py.
+# Profile and error-consistency figures for radiances are global only.
+# =============================================================================
+
+paths:
+  da_dir: /path/to/mpasjedi_runs
+  hofx_dir: /path/to/mpasjedi_runs
+  diag_dir: /path/to/mpasjedi_runs
+  graphic_dir: /path/to/verify_obs/radiances
+
+experiments:
+  names: [exp_control, exp_test]
+  labels: [Control, Test]
+  types: [da, da]
+  outerloop: [2, 2]
+  n_member: [1, 1]
+
+sensors:
+  - amsua_n15
+  - amsua_n18
+  - amsua_n19
+  - amsua_metop-b
+  - amsua_metop-c
+  - amsua_aqua
+  - mhs_n19
+  - mhs_metop-b
+  - mhs_metop-c
+
+domains:
+  global: [null, null, null, null]
+  NH: [20.0, 90.0, -180.0, 180.0]
+  Tro: [-20.0, 20.0, -180.0, 180.0]
+  SH: [-90.0, -20.0, -180.0, 180.0]
+
+plot_settings:
+  plot_oma: true
+  apply_domains: [global, NH, Tro, SH]
+  figure_format: png
+  generate_lat_lon_2d: true             # bias / RMS maps per channel
+  latlon_domain: global
+  latlon_lat_bin_width: 5.0
+  latlon_lon_bin_width: 5.0
+  generate_time_level_2d: true          # cycle x latitude per channel
+  generate_lat_vert_2d: false           # not used for radiances
+  comparison_relative_reduction_statistics: [RMS, STD]
+  generate_error_consistency: true
+  write_error_tables: true
+  scorecard:
+    statistics: [RMS, STD]
+
+time_settings:
+  start_time: "2024-09-13 00:00:00"
+  end_time: "2024-09-27 18:00:00"
+  interval: 6
+
+statistics:
+  method: weighted
+  qc_pass_flags: [0, 19]
+  common_sample: true

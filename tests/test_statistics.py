@@ -620,6 +620,23 @@ class TestEnsembleRank(unittest.TestCase):
         self.assertAlmostEqual(np.sum(c * mm["x"]), np.sum(count * m["x"]))
 
 
+class TestObsDisplaySettings(unittest.TestCase):
+    def test_plot_style_and_colorbar_reach_obs_figures(self):
+        from mpas_stat.obs.experiments import _base_graphic_cfg, _comparison_graphic_cfg
+        config = {"plot_settings": {"ci_style": "errorbar", "figure_format": "pdf",
+                                    "colorbar": {"discrete": False}},
+                  "plot_style": {"font_size": 14, "diverging_cmap": "RdYlBu_r"},
+                  "experiments": {"names": ["a", "b"], "labels": ["A", "B"],
+                                  "types": ["da", "da"], "outerloop": [2, 2],
+                                  "n_member": [1, 1]}}
+        cfg = _comparison_graphic_cfg(config, "/tmp/x", ["a", "b"], ["A", "B"], ["k", "r"])
+        self.assertEqual(cfg["plot_style"]["diverging_cmap"], "RdYlBu_r")
+        self.assertFalse(cfg["colorbar"]["discrete"])
+        self.assertEqual(cfg["ci_style"], "errorbar")
+        base, _ = _base_graphic_cfg(config, "/tmp/x")
+        self.assertEqual(base["plot_style"]["font_size"], 14)
+
+
 class TestScorecard(unittest.TestCase):
     """The scorecard reports a significant improvement where the test
     experiment has a smaller background error, and nothing significant

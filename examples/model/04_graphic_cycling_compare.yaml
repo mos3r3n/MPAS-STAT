@@ -1,0 +1,57 @@
+# =============================================================================
+# Model space 04  Figures: compare cycling experiments against analyses
+# =============================================================================
+# Reads <base_dir>/<exp>/VerifyModel/<cycle>/mpasstat.<date>.nc for every
+# experiment and cycle. The first experiment is the reference for the
+# % difference figures (negative = better).
+#
+#   mpas-stat-graphics -c 04_graphic_cycling_compare.yaml
+#
+# Note: model-space scores verify against an analysis, which favours
+# experiments that resemble it at short range. Prefer observation-space
+# results for analysis-time conclusions (USER_GUIDE 5.5).
+# =============================================================================
+
+paths:
+  base_dir: /path/to/mpasjedi_runs
+  out_dir: /path/to/verify_model/control_vs_test
+
+figure_format: png
+n_workers: 8
+
+experiments:
+  names: [exp_control, exp_test]
+  labels: [Control, Test]
+  linestyles: ["-", "-"]          # colours: colour-blind-safe palette by default
+
+time:
+  start: 2024091300
+  end: 2024092718
+  interval_hours: 6
+
+variables: [U, V, T, Qv]
+statistics: [rms, mean, std]
+regions: [Global, NHem, Tropics, SHem]
+time_aggregation: pooled
+
+ci_style: shade
+relative_reduction_statistics: [rms, std]
+profile_diff_statistics: [rms]
+
+plot_types:
+  - time_series_0d       # domain mean per cycle
+  - profiles_1d          # time-mean profiles with bootstrap CI
+  - profile_diff_1d      # % difference profiles with significance
+  - time_level_2d        # cycle x level
+  - lat_vert_2d          # latitude x level
+  - lat_lon_2d           # maps
+  - lat_lon_slice_2d     # maps on selected levels (level_slices below)
+
+level_slices:
+  - name: pressure_slices
+    vertical_type: pressure
+    levels: [850, 500, 250]
+
+bootstrap:
+  n_boot: 1000
+  ci: 95

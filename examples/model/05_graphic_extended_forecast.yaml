@@ -1,0 +1,54 @@
+# =============================================================================
+# Model space 05  Figures: extended-forecast skill vs. lead time
+# =============================================================================
+# Reads the ExtendedFC statistics written by scripts/run_verify_model_fcst.ksh:
+#   <base_dir>/<exp>/VerifyModel/<init_cycle>/f<HHH>/mpasstat.<valid_date>.nc
+#
+#   mpas-stat-graphics -c 05_graphic_extended_forecast.yaml
+#
+# forecast_scorecard: one panel per experiment vs. the first; triangles up =
+# better, filled with outline = significant.
+# =============================================================================
+
+paths:
+  base_dir: /path/to/mpasjedi_runs
+  out_dir: /path/to/verify_model/forecast
+
+figure_format: png
+n_workers: 16                   # one figure per lead for several plot types
+
+experiments:
+  names: [fc_control, fc_test]
+  labels: [Control, Test]
+
+time:                           # initialization times
+  start: 2024091300
+  end: 2024092700
+  interval_hours: 24
+
+forecast:
+  start: 12                     # first lead (0 = include the analysis)
+  length: 120
+  interval: 12
+
+variables: [U, V, T, Qv]
+statistics: [rms, mean]
+regions: [Global, NHem, Tropics, SHem]
+ci_style: errorbar
+
+plot_types:
+  - forecast_lead_0d            # score vs. lead
+  - forecast_lead_diff_0d       # % difference vs. lead
+  - forecast_profiles_1d        # one figure per lead
+  - forecast_profile_diff_1d
+  - forecast_time_level_2d      # lead x level, with significance
+  - forecast_scorecard
+
+scorecard:
+  profile_key: vert_pres_profile
+  rows:
+    - {variable: U,  levels: [250, 500, 850]}
+    - {variable: V,  levels: [250, 500, 850]}
+    - {variable: T,  levels: [250, 500, 850]}
+    - {variable: Qv, levels: [500, 700, 850]}
+    - {variable: Ps}              # no levels -> surface field

@@ -1,0 +1,79 @@
+# =============================================================================
+# 08  Publication-quality figures
+# =============================================================================
+# Same statistics as 01, figures tuned for a paper: vector PDF, error bars
+# instead of shading, larger fonts, a fixed colour range so figures from
+# different runs are comparable, and a compact scorecard.
+# Only the graphics stage needs re-running when you change these settings:
+#   mpas-stat-obs-plot  08_publication_figures.yaml
+# =============================================================================
+
+paths:
+  da_dir: /path/to/mpasjedi_runs
+  hofx_dir: /path/to/mpasjedi_runs
+  diag_dir: /path/to/mpasjedi_runs
+  graphic_dir: /path/to/paper_figures/obs
+
+experiments:
+  names: [exp_control, exp_test]
+  labels: [CTRL, EXP]
+  types: [da, da]
+  outerloop: [2, 2]
+  n_member: [1, 1]
+
+sensors: [sondes, aircraft, gnssrorefncep, amsua_n19]
+
+domains:
+  global: [null, null, null, null]
+  NXTro: [30.0, 90.0, -180.0, 180.0]
+  Tro: [-23.5, 23.5, -180.0, 180.0]
+  SXTro: [-90.0, -30.0, -180.0, 180.0]
+
+plot_settings:
+  plot_oma: false                       # papers usually show OMB only
+  apply_domains: [global, NXTro, Tro, SXTro]
+  figure_format: pdf                    # vector output
+  generate_lat_lon_2d: true
+  latlon_domain: global
+  generate_time_level_2d: true
+  generate_lat_vert_2d: true
+  comparison_relative_reduction_statistics: [RMS]
+  ci_style: errorbar                    # shade | errorbar | none
+  palette: [black, "#d95f02", "#7570b3", "#1b9e77"]   # colour-blind safe
+  scorecard:
+    statistics: [RMS]
+    levels: [850, 500, 250]
+    show_values: true
+    limit: 10                           # fixed colour range +/-10 %
+
+# Shared colour-scale and style settings (graphics stage).
+colorbar:
+  discrete: true
+  levels_diverging: 12
+  levels_sequential: 10
+  share: row                            # all panels of a variable share limits
+
+plot_style:
+  font_family: serif
+  font_size: 12
+  title_size: 13
+  label_size: 12
+  tick_size: 11
+  legend_size: 10
+  dpi: 300
+  diverging_cmap: RdBu_r
+  absolute_cmap: YlGnBu
+
+time_settings:
+  start_time: "2024-09-01 00:00:00"
+  end_time: "2024-09-30 18:00:00"
+  interval: 6
+
+statistics:
+  method: weighted
+  common_sample: true
+
+bootstrap:
+  n_boot: 5000                          # smoother intervals for the final figures
+  ci: 95
+  seed: 0
