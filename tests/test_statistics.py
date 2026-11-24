@@ -465,6 +465,7 @@ class TestErrorConsistencyDiagnostics(unittest.TestCase):
                     f.require_group(qc)[v] = np.zeros(n, "i4")
                     f.require_group("ObsError")[v] = np.full(n, so)
                     f.require_group("EffectiveError2")[v] = np.full(n, assumed * so)
+                    f.require_group("EffectiveError0")[v] = np.full(n, assumed * so)
                     if nmember == 1:
                         f.require_group("oman")[v] = (y - xa)[order]
                         f.require_group("EffectiveQC2")[v] = np.zeros(n, "i4")
@@ -560,9 +561,47 @@ class TestErrorConsistencyDiagnostics(unittest.TestCase):
                                / np.sqrt(np.sum(c * ss["total_spread"] ** 2) / c.sum()),
                                1.0, delta=0.05)
 
+    def test_normalized_departures_known_values(self):
+        # d = O-B ~ N(0, so^2 + sb^2); the DA assumed 1.5 * so; optimal OMA
+        # has variance so^4 / (so^2 + sb^2).
+        so, sb = self.SO, self.SB
+        with self._run(1) as ds:
+            g = ds["omb/airTemperature/0D/global"]
+            self.assertAlmostEqual(float(g["NormDepRMS"][...]),
+                                   np.sqrt(so**2 + sb**2) / (1.5 * so), delta=0.02)
+            self.assertAlmostEqual(float(g["NormDepMean"][...]), 0.0, delta=0.03)
+            hist = np.asarray(g["NormDepHist"][:])
+            self.assertEqual(hist.sum(), float(g["NormDepCount"][...]))
+            self.assertNotIn("NormDepTotalRMS", g.variables)      # deterministic
+            a = ds["oma/airTemperature/0D/global"]
+            self.assertAlmostEqual(float(a["NormDepRMS"][...]),
+                                   np.sqrt(so**4 / (so**2 + sb**2)) / (1.5 * so), delta=0.02)
+            prof = ds["omb/airTemperature/1D/vert_pres_profile_global"]
+            self.assertEqual(float(np.sum(prof["NormDepCount"][:])), hist.sum())
+        with self._run(10) as ds:
+            g = ds["omb/windEastward/0D/global"]
+            self.assertAlmostEqual(float(g["NormDepTotalRMS"][...]), 1.0, delta=0.04)
+            self.assertIn("NormDepTotalHist", g.variables)
+
+    def test_normalized_departures_collected_and_pooled(self):
+        from mpas_stat.graphics.plots_normdep import gaussian_tail_fraction
+        from mpas_stat.obs.collect import collect_obs_normalized_departures
+        from mpas_stat.obs.common import generate_cycles, resolve_time_settings
+        self._run(1).close()
+        start, end, step = resolve_time_settings(self.config, "aircraft")
+        out = collect_obs_normalized_departures(
+            self.diag_dir, "exp", "aircraft", generate_cycles(start, end, step), ["T"],
+            ["airTemperature"], "global", "vert_pres_profile_global")["T"]
+        self.assertEqual(set(out) >= {"omb", "oma", "coord", "edges"}, True)
+        self.assertEqual(out["omb"]["hist"].size, out["edges"].size - 1)
+        self.assertAlmostEqual(out["omb"]["rms"], np.sqrt(self.SO**2 + self.SB**2) / (1.5 * self.SO),
+                               delta=0.02)
+        self.assertAlmostEqual(gaussian_tail_fraction(3.0), 0.0026998, places=6)
+
     def test_legacy_writes_no_error_diagnostics(self):
         with self._run(1, method="legacy") as ds:
             self.assertNotIn("ObsErrorDesroziers", ds["omb/airTemperature/0D/global"].variables)
+            self.assertNotIn("NormDepRMS", ds["omb/airTemperature/0D/global"].variables)
 
 
 class TestEnsembleRank(unittest.TestCase):
