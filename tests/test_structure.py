@@ -228,6 +228,16 @@ class TestObsStatsRoundTrip(unittest.TestCase):
                 "vert_pres_profile_global", "Pressure (hPa)", True)
             self.assertIn("T", profiles["Count"])
             self.assertEqual(np.nansum(profiles["Count"]["T"]["mean_profile"]), n)
+            self.assertTrue(os.path.exists(
+                f"{tmp}/diag/exp/VerifyOBS/2024091306/obsstat_aircraft.2024-09-13_06.00.00.nc"))
+
+            # experiments.write: other experiments are read but not written
+            config["experiments"]["write"] = ["nobody"]
+            with self.assertRaises(ValueError):
+                write_obs_diag_files(results, config, "aircraft", f"{tmp}/diag2")
+            config["experiments"]["write"] = []
+            write_obs_diag_files(results, config, "aircraft", f"{tmp}/diag2")
+            self.assertFalse(os.path.exists(f"{tmp}/diag2/exp"))
 
 
 if __name__ == "__main__":

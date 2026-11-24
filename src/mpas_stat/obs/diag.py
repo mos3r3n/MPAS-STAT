@@ -26,7 +26,7 @@ experiment "types" in the config's experiments.types list:
         <hofx_dir>/<exp>/<cycle>/dbOut/obsout_hofx_<obs>.h5
     time-resolved per assimilation cycle, writing one diagnosis file per
     (experiment, cycle, obs type) to
-        <diag_dir>/<experiment>/VerifyObs/<cycle>/obsstat_<obs>.<date>.nc
+        <diag_dir>/<experiment>/VerifyOBS/<cycle>/obsstat_<obs>.<date>.nc
     -- see process_experiment() / write_obs_diag_files(). The experiment
     sits at the top of the tree, exactly mirroring MPAS-STAT's own
     model-space <exp>/VerifyModel/<cycle>/mpasstat.<date>.nc convention --
@@ -40,7 +40,7 @@ experiment "types" in the config's experiments.types list:
     for every configured forecast lead hour (config["forecast"]: length,
     interval, start -- same schema as the model-space graphic.yaml), writing
     one diagnosis file per (experiment, init cycle, lead hour, obs type) to
-        <diag_dir>/<experiment>/VerifyObs/<init_cycle>/f<HHH>/obsstat_<obs>.<valid_date>.nc
+        <diag_dir>/<experiment>/VerifyOBS/<init_cycle>/f<HHH>/obsstat_<obs>.<valid_date>.nc
     -- mirroring mpas_stat.graphics.io.get_mpasstat_forecast_file exactly.
     See process_forecast_experiment() / write_obs_forecast_diag_files().
 

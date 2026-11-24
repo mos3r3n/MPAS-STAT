@@ -9,9 +9,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Compute observation-space OMB/OMA/OMF statistics."
     )
-    parser.add_argument("config", help="YAML configuration file")
+    parser.add_argument("config", nargs="?", help="YAML configuration file")
+    parser.add_argument("-c", "--config", dest="config_opt", metavar="CONFIG",
+                        help="YAML configuration file (same as the positional argument)")
     args = parser.parse_args()
-    _main(args.config)
+    config = args.config_opt or args.config
+    if not config:
+        parser.error("a configuration file is required (-c CONFIG)")
+    _main(config)
 
 
 if __name__ == "__main__":
