@@ -218,7 +218,7 @@ python -m pyflakes src tests              # lint
 ```
 
 GitHub Actions runs both on every pull request and push to `main`
-(Python 3.9 and 3.12, `.github/workflows/tests.yml`), and also checks that
+(Python 3.10 and 3.13, `.github/workflows/tests.yml`), and also checks that
 every command-line entry point starts and that every config in `examples/`
 loads (`tests/test_examples.py`).
 
