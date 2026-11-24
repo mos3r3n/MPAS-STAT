@@ -30,6 +30,11 @@ from .sensor_config import get_bin_method
 #  <var>/2D/lat_lon/<stat> convention as src/mpas_stat/model/driver.py)
 # ============================================================================
 
+# Statistics that only exist for an ensemble (n_member > 1): never written
+# for a deterministic experiment, so no empty spread figures follow.
+_ENSEMBLE_ONLY = ("spread", "totSpread", "ndt_rms", "ndt_mean", "ndt_count")
+
+
 def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes,
                         iexp: int, time_idx: Tuple[int, ...]) -> None:
     """Write ONE diagnosis netCDF file holding every diagtype in `diagtypes`
@@ -118,7 +123,7 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
                     region_grp = d0.createGroup(domain)
                     for stat_disp, prefix in STAT_KEYS + ERROR_DIAG_KEYS + NORM_DEP_KEYS:
                         key = f"{prefix}_{diagtype}"
-                        if key not in results or (prefix.startswith("ndt") and n_member <= 1):
+                        if key not in results or (n_member <= 1 and prefix in _ENSEMBLE_ONLY):
                             continue
                         val = results[key][(iexp, idom) + time_idx + (iv,)]
                         var_out = region_grp.createVariable(stat_disp, "f4", ())
@@ -143,7 +148,7 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
                     prof_grp = d1.createGroup(pkey)
                     for stat_disp, prefix in STAT_KEYS + ERROR_DIAG_KEYS + NORM_DEP_KEYS:
                         key = f"{prefix}_{diagtype}_bin"
-                        if key not in results or (prefix.startswith("ndt") and n_member <= 1):
+                        if key not in results or (n_member <= 1 and prefix in _ENSEMBLE_ONLY):
                             continue
                         arr = results[key][(iexp, idom) + time_idx + (slice(None), iv)]
                         var_out = prof_grp.createVariable(stat_disp, "f4", ("nLevels",))

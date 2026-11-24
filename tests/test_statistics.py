@@ -573,6 +573,9 @@ class TestErrorConsistencyDiagnostics(unittest.TestCase):
             hist = np.asarray(g["NormDepHist"][:])
             self.assertEqual(hist.sum(), float(g["NormDepCount"][...]))
             self.assertNotIn("NormDepTotalRMS", g.variables)      # deterministic
+            self.assertNotIn("Spread", g.variables)
+            self.assertNotIn("TotalSpread", g.variables)
+            self.assertNotIn("Spread", ds["omb/airTemperature/1D/vert_pres_profile_global"].variables)
             a = ds["oma/airTemperature/0D/global"]
             self.assertAlmostEqual(float(a["NormDepRMS"][...]),
                                    np.sqrt(so**4 / (so**2 + sb**2)) / (1.5 * so), delta=0.02)
@@ -783,6 +786,43 @@ class TestDateTickLabels(unittest.TestCase):
             prev = c if lab else prev
         self.assertEqual(out, ["13\nSep 2024", "", "14", "1\nOct", "2", "1\nJan 2025"])
         self.assertTrue(all("\n" not in lab.split("\n")[0] for lab in out))
+
+
+class TestNoSpreadForDeterministic(unittest.TestCase):
+    """A single-member run has no spread: no Spread/TotalSpread variables,
+    no spread figures (obs space), and model-space "spread" is dropped when
+    no statistics file holds it."""
+
+    def test_obs_stat_keys_and_writer(self):
+        from mpas_stat.obs.figures import _stat_keys
+        det = {"experiments": {"names": ["a", "b"], "types": ["da", "da"], "n_member": [1, 1]}}
+        mixed = {"experiments": {"names": ["a", "b"], "types": ["da", "da"], "n_member": [1, 20]}}
+        fc_ens = {"experiments": {"names": ["a", "f"], "types": ["da", "hofx_forecast"],
+                                  "n_member": [1, 20]}}
+        names = lambda keys: {d for d, _ in keys}  # noqa: E731
+        self.assertNotIn("Spread", names(_stat_keys(det)))
+        self.assertNotIn("TotalSpread", names(_stat_keys(det)))
+        self.assertIn("Spread", names(_stat_keys(mixed)))
+        self.assertNotIn("Spread", names(_stat_keys(fc_ens)))               # cycling: deterministic
+        self.assertIn("Spread", names(_stat_keys(fc_ens, forecast=True)))   # forecast: ensemble
+
+    def test_model_spread_dropped_without_ensemble(self):
+        from mpas_stat.graphics.driver import _drop_spread_without_ensemble
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp)
+        cfg = {"paths": {"base_dir": tmp}, "experiments": {"names": ["e"]},
+               "time": {"start": 2024091300, "end": 2024091306, "interval_hours": 6}}
+        stats = ["rms", "spread"]
+        self.assertEqual(_drop_spread_without_ensemble(cfg, stats, []), stats)   # no files: keep
+        path = os.path.join(tmp, "e", "VerifyModel", "2024091300",
+                            "mpasstat.2024-09-13_00.00.00.nc")
+        os.makedirs(os.path.dirname(path))
+        with nc4.Dataset(path, "w") as ds:
+            ds.createGroup("T").createGroup("0D").createGroup("Global").createVariable("rms", "f4", ())
+        self.assertEqual(_drop_spread_without_ensemble(cfg, stats, []), ["rms"])
+        with nc4.Dataset(path, "a") as ds:
+            ds["T/0D/Global"].createVariable("spread", "f4", ())
+        self.assertEqual(_drop_spread_without_ensemble(cfg, stats, []), stats)
 
 
 class TestPlotExtent(unittest.TestCase):

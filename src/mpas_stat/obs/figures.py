@@ -167,6 +167,18 @@ def _process_sensor(config, diag_obs, sensor_graphic_dir, diag_base_dir):
     return diag_obs, len(jobs)
 
 
+def _stat_keys(config, forecast=False):
+    """STAT_KEYS for the figures of the cycling (or forecast) experiments:
+    Spread and TotalSpread only when at least one of them is an ensemble
+    (n_member > 1) -- a deterministic run has no spread to plot."""
+    types = config["experiments"].get("types", ["da"] * len(config["experiments"]["names"]))
+    members = [int(n) for n, t in zip(config["experiments"]["n_member"], types)
+               if (t == "hofx_forecast") == forecast]
+    if any(m > 1 for m in members):
+        return list(STAT_KEYS)
+    return [(d, p) for d, p in STAT_KEYS if p not in ("spread", "totSpread")]
+
+
 def generate_time_series_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
     """Build one time-series job per (domain, statistic), via
     plot_time_series_0d -- returns [] when the config has no "da"/"hofx"-
@@ -200,7 +212,7 @@ def generate_time_series_graphics(config, diag_obs, graphic_out_dir, diag_base_d
     for domain in domains:
         cfg_dom = dict(cfg)
         cfg_dom["region"] = domain
-        for stat_disp, _ in STAT_KEYS:
+        for stat_disp, _ in _stat_keys(config, forecast=False):
             jobs.append((plot_time_series_0d, (per_exp_stats, stat_disp, cfg_dom), {}))
     return jobs
 
@@ -249,7 +261,7 @@ def generate_profile_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
             for pseudo_name, (exp_name, diagtype) in zip(pseudo_names, index_map)
         }
 
-        for stat_disp, _ in STAT_KEYS:
+        for stat_disp, _ in _stat_keys(config, forecast=False):
             Profiles = {name: per_exp_profiles[name].get(stat_disp, {}) for name in pseudo_names}
             if any(Profiles.values()):
                 jobs.append((plot_profiles_1d, (Profiles, profile_key, stat_disp, cfg), {}))
@@ -567,7 +579,7 @@ def generate_time_level_graphics(config, diag_obs, graphic_out_dir, diag_base_di
                 for name in names
             }
 
-            for stat_disp, _ in STAT_KEYS:
+            for stat_disp, _ in _stat_keys(config, forecast=False):
                 TimeLev = {name: per_exp_timelev[name].get(stat_disp, {}) for name in names}
                 if any(TimeLev.values()):
                     jobs.append((plot_time_level_2d, (TimeLev, profile_key, stat_disp, cfg), {}))
@@ -655,7 +667,7 @@ def generate_forecast_lead_graphics(config, diag_obs, graphic_out_dir, diag_base
     for domain in domains:
         cfg_dom = dict(cfg)
         cfg_dom["region"] = domain
-        for stat_disp, _ in STAT_KEYS:
+        for stat_disp, _ in _stat_keys(config, forecast=True):
             ForecastLead = {
                 exp_name: collect_obs_forecast_lead_0d(
                     diag_base_dir, exp_name, diag_obs, cycles, leads,
@@ -733,7 +745,7 @@ def generate_forecast_profile_graphics(config, diag_obs, graphic_out_dir, diag_b
                 for name in names
             }
             lead_cfg = _lead_cfg(cfg, lead)
-            for stat_disp, _ in STAT_KEYS:
+            for stat_disp, _ in _stat_keys(config, forecast=True):
                 Profiles = {name: per_exp_profiles[name].get(stat_disp, {}) for name in names}
                 if any(Profiles.values()):
                     jobs.append((plot_profiles_1d, (Profiles, profile_key, stat_disp, lead_cfg), {}))
@@ -870,7 +882,7 @@ def generate_forecast_time_level_graphics(config, diag_obs, graphic_out_dir, dia
     jobs = []
     for domain in domain_loop:
         profile_key = profile_key_for_domain(bin_method, domain)
-        for stat_disp, _ in STAT_KEYS:
+        for stat_disp, _ in _stat_keys(config, forecast=True):
             TimeLev = {
                 name: collect_obs_forecast_time_level_2d(
                     diag_base_dir, name, diag_obs, cycles, leads,
