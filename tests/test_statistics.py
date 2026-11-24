@@ -530,9 +530,94 @@ class TestErrorConsistencyDiagnostics(unittest.TestCase):
         self.assertGreater(min(opts["xvals"]), 1000.0)          # Pa, not hPa
         self.assertTrue(all(abs(e - self.SO) < 0.3 for e in opts["errors"]))
 
+    def test_ensemble_rank_histogram_and_spread_skill_written(self):
+        from mpas_stat.graphics.plots_ensemble import rank_histogram_summary
+        from mpas_stat.obs.collect import collect_obs_rank_histograms, collect_obs_spread_skill
+        from mpas_stat.obs.common import generate_cycles, resolve_time_settings
+        with self._run(10) as ds:
+            g = ds["omb/airTemperature/0D/global"]
+            hist = np.asarray(g["RankHistogram"][:])
+            self.assertEqual(hist.size, 11)
+            self.assertEqual(hist.sum(), float(g["Count"][...]))
+            self.assertNotIn("RankHistogram", ds["oma/airTemperature/0D/global"].variables)
+            prof = np.asarray(ds["omb/airTemperature/1D/vert_pres_profile_global/RankHistogram"][:])
+            self.assertEqual(prof.sum(), hist.sum())        # every obs falls in one level bin
+        _, outlier, delta = rank_histogram_summary(hist)
+        self.assertAlmostEqual(outlier, 1.0, delta=0.15)    # consistent ensemble: flat
+        self.assertLess(delta, 0.08)
+        start, end, step = resolve_time_settings(self.config, "aircraft")
+        cycles = generate_cycles(start, end, step)
+        args = (self.diag_dir, "exp", "aircraft", cycles, ["T"], ["airTemperature"], "global")
+        rh = collect_obs_rank_histograms(*args, profile_key="vert_pres_profile_global")
+        self.assertEqual(rh["T"]["hist"].sum(), hist.sum())
+        ss = collect_obs_spread_skill(*args, n_groups=5, min_count=10)["T"]
+        self.assertEqual(int(ss["count"].sum()), int(hist.sum()))
+        # consistent ensemble: pooled over all groups, error and spread agree
+        # (per group they need not: here the true spread is constant, so
+        # binning on the sampled spread only shows regression to the mean)
+        c = ss["count"]
+        self.assertAlmostEqual(np.sqrt(np.sum(c * ss["rms"] ** 2) / c.sum())
+                               / np.sqrt(np.sum(c * ss["total_spread"] ** 2) / c.sum()),
+                               1.0, delta=0.05)
+
     def test_legacy_writes_no_error_diagnostics(self):
         with self._run(1, method="legacy") as ds:
             self.assertNotIn("ObsErrorDesroziers", ds["omb/airTemperature/0D/global"].variables)
+
+
+class TestEnsembleRank(unittest.TestCase):
+    """Rank of the observation among (perturbed) members, and the level
+    index helper used for rank histograms by level."""
+
+    def _ranks(self, spread_scale, perturb=True):
+        from mpas_stat.obs.reader import _observation_rank
+        rng = np.random.default_rng(0)
+        n, m, so, sb = 40000, 9, 1.0, 1.5
+        truth = np.zeros(n)
+        mean = truth + sb * rng.standard_normal(n)
+        y = truth + so * rng.standard_normal(n)
+        members = mean[None] + spread_scale * sb * rng.standard_normal((m, n))
+        return _observation_rank(members, y, None, np.full(n, so), perturb=perturb, seed=1)
+
+    def test_reliable_flat_underdispersive_u_shaped(self):
+        from mpas_stat.graphics.plots_ensemble import rank_histogram_summary
+        flat = np.bincount(self._ranks(1.0).astype(int), minlength=10)
+        _, out_flat, d_flat = rank_histogram_summary(flat)
+        self.assertAlmostEqual(out_flat, 1.0, delta=0.08)
+        self.assertLess(d_flat, 0.05)
+        narrow = np.bincount(self._ranks(0.5).astype(int), minlength=10)
+        _, out_narrow, _ = rank_histogram_summary(narrow)
+        self.assertGreater(out_narrow, 1.5)
+        # without the obs-error perturbation even a reliable ensemble looks U-shaped
+        raw = np.bincount(self._ranks(1.0, perturb=False).astype(int), minlength=10)
+        self.assertGreater(rank_histogram_summary(raw)[1], 1.2)
+
+    def test_missing_member_gives_nan(self):
+        from mpas_stat.obs.reader import _observation_rank
+        members = np.array([[1.0, np.nan], [2.0, 2.0]])
+        r = _observation_rank(members, np.array([1.5, 1.5]), None, None, perturb=False)
+        self.assertEqual(r[0], 1.0)
+        self.assertTrue(np.isnan(r[1]))
+
+    def test_level_bin_index_matches_calculate_stats(self):
+        from mpas_stat.obs.binning import calculate_stats, level_bin_index
+        rng = np.random.default_rng(2)
+        for method, levels, vals in (
+                (1, np.array([1000., 850., 500., 250., 100.]), rng.uniform(50, 1050, 3000)),
+                (3, np.arange(-80., 81., 10.), rng.uniform(-90, 90, 3000))):
+            idx = level_bin_index(vals, levels, method)
+            counts = calculate_stats(np.ones_like(vals), np.zeros_like(vals), vals,
+                                     levels, method)["count"][:-1]
+            np.testing.assert_array_equal(np.bincount(idx[idx >= 0], minlength=levels.size),
+                                          counts)
+
+    def test_merge_spread_bins_conserves_counts(self):
+        from mpas_stat.obs.collect import merge_spread_bins
+        count = np.array([0, 5, 100, 300, 50, 0, 10, 535])
+        m = {"x": np.arange(8.0)}
+        c, mm = merge_spread_bins(count, m, n_groups=4, min_count=1)
+        self.assertEqual(c.sum(), count.sum())
+        self.assertAlmostEqual(np.sum(c * mm["x"]), np.sum(count * m["x"]))
 
 
 class TestScorecard(unittest.TestCase):

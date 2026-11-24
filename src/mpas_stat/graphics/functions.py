@@ -40,6 +40,11 @@ from .plots_1d import (
     plot_profile_reduction_1d,
     plot_profiles_1d,
 )
+from .plots_ensemble import (
+    plot_rank_histogram,
+    plot_rank_histogram_levels,
+    plot_spread_skill,
+)
 from .plots_2d import (
     _level_suffix,
     plot_forecast_time_level_2d,
@@ -67,6 +72,9 @@ from .style import (
 
 __all__ = [
     "plot_error_consistency_1d",
+    "plot_rank_histogram",
+    "plot_rank_histogram_levels",
+    "plot_spread_skill",
     "apply_pub_style",
     "auto_layout",
     "get_exp_plot_settings",
