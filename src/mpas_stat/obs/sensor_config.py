@@ -133,7 +133,7 @@ OBSERVATION_CONFIGS: Dict[str, ObservationConfig] = {
         bin_method=PRESSURE,
     ),
     "sfc": ObservationConfig(
-        variables=['windEastward', 'windNorthward', 'airTemperature', 'specificHumidity', 'stationPressure'],
+        variables=['windEastward', 'windNorthward', 'airTemperatureAt2M', 'specificHumidity', 'stationPressure'],
         units=[r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{m \cdot s^{-1}}$', r'$\mathrm{K}$', r'$\mathrm{g \cdot kg^{-1}}$', 'Pa'],
         labels=['(a) U10', '(b) V10', '(c) T2', '(d) Q2', '(e) Ps'],
         bin_method=PRESSURE,
