@@ -226,7 +226,12 @@ obs-space statistics -> diagnosis file -> collector round trip. They need `numpy
   reproduce older results exactly.
 - Bootstrap significance treats cycles as independent, so it is somewhat
   optimistic (USER_GUIDE §5.5).
-- Percent-reduction/difference figures use **positive = improvement**.
+- Experiment-vs-control figures (2-D comparison panels, profile and
+  lead-time difference plots, scorecard) show the percent **difference**
+  `100 × (exp − ref) / ref`: **negative = lower RMS/STD than the control
+  (improvement, ▲, blue)**, positive = degradation (▼, red). The OMB→OMA
+  figures are labelled "reduction (%)" and keep `100 × (OMB − OMA) / OMB`
+  (positive = the analysis improved on the background).
 - Percent differences are suppressed when the reference value is below the
   configured `relative_min_reference` threshold (and a separate, larger
   threshold for water vapour).

@@ -313,6 +313,48 @@ class TestObsCollectorsPooled(unittest.TestCase):
                         self.assertEqual(out["pool"]["w"].shape, out["samples"].shape)
 
 
+class TestComparisonMarkers(unittest.TestCase):
+    """Comparison figures plot 100*(exp-ref)/ref; lower RMS than the
+    reference (negative difference) gets the upward triangle."""
+
+    def _markers(self, plot_fn, *args):
+        import matplotlib
+        matplotlib.use("Agg")
+        from unittest import mock
+        import matplotlib.axes
+        calls = []
+        real = matplotlib.axes.Axes.scatter
+
+        def spy(ax, *a, **k):
+            calls.append((k.get("marker"), np.asarray(a[1] if len(a) > 1 else []).ravel()))
+            return real(ax, *a, **k)
+        with mock.patch.object(matplotlib.axes.Axes, "scatter", spy), \
+                mock.patch("mpas_stat.graphics.scorecard._save_fig"), \
+                mock.patch("mpas_stat.graphics.panels.plt", create=True):
+            plot_fn(*args)
+        return [m for m, _ in calls if m in ("^", "v")]
+
+    def test_scorecard_triangle_follows_improvement(self):
+        from mpas_stat.graphics.scorecard import plot_forecast_scorecard
+        better = {"leads": np.array([6.0]), "samples": np.full((4, 1), 1.0)}
+        worse = {"leads": np.array([6.0]), "samples": np.full((4, 1), 2.0)}
+        cfg = {"experiments": {"names": ["ref", "exp"], "labels": ["Ref", "Exp"]},
+               "bootstrap": {"n_boot": 20}}
+        # exp has LOWER RMS than ref -> improvement -> upward triangle
+        self.assertEqual(self._markers(plot_forecast_scorecard,
+                                       {"ref": [worse], "exp": [better]}, ["U 500"], "rms", cfg), ["^"])
+        self.assertEqual(self._markers(plot_forecast_scorecard,
+                                       {"ref": [better], "exp": [worse]}, ["U 500"], "rms", cfg), ["v"])
+
+    def test_difference_helper(self):
+        from mpas_stat.core.pooling import entry_difference_ci
+        ref = {"samples": np.full((3, 2), 2.0)}
+        exp = {"samples": np.array([[1.0, 3.0]] * 3)}
+        diff, lo, hi = entry_difference_ci(ref, exp, {"n_boot": 20, "ci": 95, "seed": 0})
+        np.testing.assert_allclose(diff, [-50.0, 50.0])
+        self.assertTrue(np.all(lo <= diff) and np.all(diff <= hi))
+
+
 class TestDatelineDomains(unittest.TestCase):
     def test_mask_crosses_dateline(self):
         lon = np.array([175.0, -175.0, 0.0, -170.0])

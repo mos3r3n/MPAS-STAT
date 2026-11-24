@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from ..core.bootstrap import get_bootstrap_settings
-from ..core.pooling import entry_reduction_ci, entry_value
+from ..core.pooling import entry_difference_ci, entry_value
 from .axes import (
     _apply_latitude_formatter,
     _categorical_positions,
@@ -221,9 +221,10 @@ def plot_profile_reduction_1d(Profiles_ref, Profiles_exp, profile_key, cfg):
 
 # ---------------------------------------------------------------------------
 def plot_profile_diff_1d(Profiles, profile_key, stat_name, cfg):
-    """Percent reduction profile vs the reference experiment.
+    """Percent difference profile vs the reference experiment,
+    100 * (exp - ref) / ref.
 
-    Positive values indicate improvement over the reference.
+    Negative values = lower than the reference (an improvement for RMS/STD).
     Significant levels are marked with black dots.
     """
     apply_pub_style(cfg)
@@ -264,7 +265,7 @@ def plot_profile_diff_1d(Profiles, profile_key, stat_name, cfg):
             if exp_entry is None:
                 continue
 
-            red, ci_low, ci_high = entry_reduction_ci(ref_entry, exp_entry, boot)
+            red, ci_low, ci_high = entry_difference_ci(ref_entry, exp_entry, boot)
             threshold = _relative_ref_threshold(var_name, cfg)
             ref_mean = entry_value(ref_entry)
             small_ref = ~np.isfinite(ref_mean) | (np.abs(ref_mean) < threshold)

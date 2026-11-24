@@ -248,3 +248,12 @@ def pool_from_rows(stat_name, rows):
         return np.asarray([[np.asarray(c[i], dtype=np.float64) for c in row] for row in rows],
                           dtype=np.float64)
     return {"kind": stat_kind(stat_name), "w": take(1), "m1": take(2), "m2": take(3)}
+
+
+def entry_difference_ci(ref_entry, exp_entry, boot, key="samples"):
+    """Percent DIFFERENCE of exp vs ref, 100 * (exp - ref) / ref, with its
+    bootstrap CI: negative = lower than the reference (an improvement for
+    RMS / STD). This is what the comparison figures plot ("diff. (%)");
+    it is the negative of entry_reduction_ci()."""
+    red, lo, hi = entry_reduction_ci(ref_entry, exp_entry, boot, key=key)
+    return -red, -hi, -lo

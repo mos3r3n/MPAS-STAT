@@ -4,7 +4,7 @@ pcolormesh panel builder used by every 2-D plot type.
 import numpy as np
 
 from ..core.bootstrap import get_bootstrap_settings
-from ..core.pooling import entry_reduction_ci, entry_value
+from ..core.pooling import entry_difference_ci, entry_value
 from .axes import (
     _adaptive_geo_locator,
     _apply_latitude_formatter,
@@ -98,7 +98,8 @@ def add_significance(ax, x, y, significant, improved=None, transpose=False,
                           transform=None, marker_size=60, edge_width=0.75):
     """Scatter black hollow triangles at significant grid points.
 
-    Upward triangle: significant improvement
+    Upward triangle: significant improvement (``improved``; for percent
+    differences of RMS/STD that is a NEGATIVE difference)
     Downward triangle: significant degradation / non-improvement
     """
     sig = np.asarray(significant, dtype=bool)
@@ -226,7 +227,7 @@ def _draw_2d_panels(fig, axs, var_names, exp_names, exp_labels,
                                     **_pixel_edge_kwargs(cfg))
                 if significant is not None and boot["plot_significance"]:
                     add_significance(ax, lon, lat, significant, 
-                                         improved=None if stat_name == "spread" else (data > 0),
+                                         improved=None if stat_name == "spread" else (data < 0),
                                          transpose=False, transform=transform,
                                          marker_size=cfg.get("significance_marker_size", 30))
                 ax.coastlines(resolution="10m", linewidth=0.5)
@@ -251,7 +252,7 @@ def _draw_2d_panels(fig, axs, var_names, exp_names, exp_labels,
                                     **_pixel_edge_kwargs(cfg))
                 if significant is not None and boot["plot_significance"]:
                     add_significance(ax, x, y_plot, significant,
-                                         improved=None if stat_name == "spread" else (data > 0),
+                                         improved=None if stat_name == "spread" else (data < 0),
                                          # `data` above is plot_data.T'd (or not) per
                                          # transpose_data; `significant` (used here) has
                                          # NOT been transposed, so it must be transposed
@@ -367,6 +368,9 @@ def _compute_panel_data(entry, ref_samples, iexp, use_rel, stat_name,
                         boot, cfg, ref_key="samples", var_name=None, ref_entry=None):
     """Return (plot_data, significant_mask) for a single panel.
 
+    Comparison panels (iexp > 0 for a relative statistic) show the percent
+    difference 100 * (exp - ref) / ref: negative = lower than the reference.
+
     Percent reductions use pooled cycle aggregation when both `entry` and
     `ref_entry` carry a "pool" (see mpas_stat.core.pooling), else the plain
     mean of `ref_samples` / entry[ref_key]."""
@@ -378,7 +382,7 @@ def _compute_panel_data(entry, ref_samples, iexp, use_rel, stat_name,
             return None, None
         if ref_entry is None:
             ref_entry = {ref_key: ref_samples}
-        plot_data, ci_low, ci_high = entry_reduction_ci(ref_entry, entry, boot, key=ref_key)
+        plot_data, ci_low, ci_high = entry_difference_ci(ref_entry, entry, boot, key=ref_key)
         # Additional masking for near-zero absolute reference values.
         # This is especially important for QV, where tiny reference values can
         # create meaningless percent reductions.

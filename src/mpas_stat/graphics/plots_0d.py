@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from ..core.bootstrap import get_bootstrap_settings
-from ..core.pooling import entry_reduction_ci, entry_value
+from ..core.pooling import entry_difference_ci, entry_reduction_ci, entry_value
 from .axes import _set_compact_time_axis
 from .style import (
     _ensure_panel_ticks,
@@ -323,8 +323,9 @@ def plot_forecast_lead_diff_0d(ForecastLead, stat_name, cfg):
 
     Mirrors plot_profile_diff_1d, but the independent axis is forecast lead
     time (from collect_forecast_lead_0d's per-cycle samples at each lead)
-    instead of a vertical coordinate. Positive values indicate improvement
-    over the reference; significant lead times (bootstrap CI vs. the
+    instead of a vertical coordinate. Values are the percent difference
+    100 * (exp - ref) / ref: negative = lower than the reference (an
+    improvement for RMS/STD); significant lead times (bootstrap CI vs. the
     reference excludes zero) are marked with a dot, same convention as
     plot_profile_diff_1d.
     """
@@ -362,7 +363,7 @@ def plot_forecast_lead_diff_0d(ForecastLead, stat_name, cfg):
             if exp_entry is None:
                 continue
 
-            red, ci_low, ci_high = entry_reduction_ci(ref_entry, exp_entry, boot)
+            red, ci_low, ci_high = entry_difference_ci(ref_entry, exp_entry, boot)
             threshold = _relative_ref_threshold(var_name, cfg)
             ref_mean  = entry_value(ref_entry)
             small_ref = ~np.isfinite(ref_mean) | (np.abs(ref_mean) < threshold)

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from ..core.bootstrap import get_bootstrap_settings
-from ..core.pooling import entry_reduction_ci, entry_value
+from ..core.pooling import entry_difference_ci, entry_value
 from .style import (
     _ensure_panel_ticks,
     _relative_ref_threshold,
@@ -29,8 +29,9 @@ def plot_forecast_scorecard(ScoreCard, row_labels, stat_name, cfg):
 
       - Rows are variable/level combinations from cfg["scorecard"]["rows"]
         (e.g. "U 200 hPa", ..., "Ps"); columns are forecast lead hours.
-      - Each cell is a single triangle: pointing up = improvement, pointing
-        down = degradation (sign of the bootstrap percent difference).
+      - Each cell is a single triangle for the percent difference
+        100 * (exp - ref) / ref: pointing up = improvement (negative
+        difference, lower RMS/STD), pointing down = degradation.
       - Marker size scales with |percent difference|, capped at
         cfg["scorecard"]["max_score"] (default 20%).
       - Statistically significant cells (bootstrap CI vs. the reference
@@ -105,7 +106,7 @@ def plot_forecast_scorecard(ScoreCard, row_labels, stat_name, cfg):
                 ax.axhspan(irow - 0.5, irow + 0.5, color="0.85", zorder=0)
                 continue
 
-            red, ci_low, ci_high = entry_reduction_ci(ref_rows[irow], exp_rows[irow], boot)
+            red, ci_low, ci_high = entry_difference_ci(ref_rows[irow], exp_rows[irow], boot)
             var_key   = row_labels[irow].split()[0]
             threshold = _relative_ref_threshold(var_key, cfg)
             ref_mean  = entry_value(ref_rows[irow])
@@ -129,7 +130,10 @@ def plot_forecast_scorecard(ScoreCard, row_labels, stat_name, cfg):
                 # sign (unlike rms/std, where a smaller value is always
                 # better); it is still drawn up/down by sign here so every
                 # cell gets a triangle, but treat its direction with care.
-                improved = bool(val > 0)
+                # val is the percent difference 100*(exp-ref)/ref: a
+                # negative value (lower RMS/STD than the reference) is an
+                # improvement and gets the upward triangle.
+                improved = bool(val < 0)
                 marker   = "^" if improved else "v"
                 color    = improve_color if improved else degrade_color
 

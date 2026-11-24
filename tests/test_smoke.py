@@ -126,7 +126,10 @@ class TestReductionSign(unittest.TestCase):
         red, _, _ = bootstrap_reduction_ci(ref, exp, n_boot=200, ci=95, seed=0)
         self.assertAlmostEqual(float(red[0]), -100.0)
 
-    def test_2d_panel_marks_positive_reduction_as_improvement(self):
+    def test_2d_panel_shows_percent_difference(self):
+        # Comparison panels plot the percent DIFFERENCE 100*(exp-ref)/ref:
+        # halving the RMS is -50% (an improvement, drawn with an upward
+        # triangle -- see TestScorecardMarkers in test_statistics.py).
         ref = np.array([[2.0]] * 3)
         entry = {"data": np.array([1.0]), "samples": np.array([[1.0]] * 3)}
         boot = get_bootstrap_settings({})
@@ -134,7 +137,7 @@ class TestReductionSign(unittest.TestCase):
             entry, ref, iexp=1, use_rel=True, stat_name="rms",
             boot=boot, cfg={}, ref_key="samples", var_name="U",
         )
-        self.assertAlmostEqual(float(plot_data[0]), 50.0)
+        self.assertAlmostEqual(float(plot_data[0]), -50.0)
         self.assertTrue(bool(significant[0]))
 
 
