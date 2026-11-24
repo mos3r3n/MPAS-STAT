@@ -60,6 +60,9 @@ from ..graphics.functions import (
     plot_lat_vert_2d,
     plot_profile_reduction_1d,
     plot_profiles_1d,
+    plot_rank_histogram,
+    plot_rank_histogram_levels,
+    plot_spread_skill,
     plot_time_level_2d,
     plot_time_series_0d,
     plot_time_series_reduction_0d,
@@ -74,6 +77,8 @@ from .collect import (
     collect_obs_lat_lon_2d,
     collect_obs_lat_vert_2d,
     collect_obs_profiles_1d,
+    collect_obs_rank_histograms,
+    collect_obs_spread_skill,
     collect_obs_stats_0d,
     collect_obs_time_level_2d,
 )
@@ -336,6 +341,63 @@ def generate_error_consistency_graphics(config, diag_obs, graphic_out_dir, diag_
         }
         if any(ErrProfiles.values()):
             jobs.append((plot_error_consistency_1d, (ErrProfiles, profile_key, cfg), {}))
+    return jobs
+
+
+def generate_ensemble_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
+    """Rank histograms (per domain, and by level / latitude per experiment)
+    and spread-skill figures for the cycling experiments with n_member > 1.
+    Skipped when statistics.ensemble_diagnostics or
+    plot_settings.generate_ensemble_diagnostics is off."""
+    settings = resolve_statistics_settings(config)
+    if not settings.get("ensemble_diagnostics"):
+        return []
+    if not config["plot_settings"].get("generate_ensemble_diagnostics", True):
+        return []
+    names, labels, colors = _experiments_for_diagtype(config, "omb")
+    n_member = dict(zip(config["experiments"]["names"], config["experiments"]["n_member"]))
+    keep = [i for i, n in enumerate(names) if int(n_member.get(n, 1)) > 1]
+    if not keep:
+        return []
+    names = [names[i] for i in keep]
+    labels = [labels[i] for i in keep]
+    colors = [colors[i] for i in keep]
+
+    bin_method = get_bin_method(diag_obs)
+    display_vars = display_var_names(diag_obs)
+    raw_vars = get_obs_config(diag_obs).variables
+    domains = list(resolve_domains(config).keys())
+    adjusted_start, end_time, interval = resolve_time_settings(config, diag_obs)
+    cycles = generate_cycles(adjusted_start, end_time, interval)
+    coord_label, _ = _profile_axis_meta(bin_method)
+    apply = config["plot_settings"].get("apply_domains") or domains
+    domain_loop = [d for d in domains if d in apply]
+    ens_cfg = config["plot_settings"].get("spread_skill", {}) or {}
+
+    cfg = _comparison_graphic_cfg(config, graphic_out_dir, names, labels, colors)
+    cfg["variables"] = display_vars
+    cfg["plot_style"] = config.get("plot_style", {})
+
+    jobs = []
+    for domain in domain_loop:
+        profile_key = None
+        if not diag_obs.startswith("sfc") and (bin_method != 3 or domain == "global"):
+            profile_key = profile_key_for_domain(bin_method, domain)
+        rank = {n: collect_obs_rank_histograms(diag_base_dir, n, diag_obs, cycles, display_vars,
+                                               raw_vars, domain, profile_key) for n in names}
+        if any(rank.values()):
+            jobs.append((plot_rank_histogram, (rank, domain, cfg), {}))
+            if domain == "global" and profile_key:
+                for n in names:
+                    jobs.append((plot_rank_histogram_levels,
+                                 (rank, n, profile_key, coord_label, cfg), {}))
+        ss = {n: collect_obs_spread_skill(diag_base_dir, n, diag_obs, cycles, display_vars,
+                                          raw_vars, domain,
+                                          n_groups=int(ens_cfg.get("groups", 10)),
+                                          min_count=int(ens_cfg.get("min_count", 50)))
+              for n in names}
+        if any(ss.values()):
+            jobs.append((plot_spread_skill, (ss, domain, cfg), {}))
     return jobs
 
 
@@ -757,6 +819,7 @@ def generate_plots(config, diag_obs, graphic_out_dir, diag_base_dir):
     # Forecast skill (OMF vs. lead time) is domain-averaged only, so it
     # applies regardless of whether this sensor gets profile/map figures.
     jobs += generate_forecast_lead_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
+    jobs += generate_ensemble_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
 
     if diag_obs.startswith("sfc"):
         return jobs

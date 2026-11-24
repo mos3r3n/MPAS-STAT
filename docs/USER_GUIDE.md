@@ -594,6 +594,8 @@ statistics:
   spread_finite_ensemble_correction: true
   time_aggregation: pooled  # or "mean"
   error_diagnostics: true   # Desroziers error estimates (§5.6)
+  ensemble_diagnostics: true    # rank histograms + spread-skill, n_member > 1 (§5.7)
+  rank_histogram_perturb: true  # perturb members with the obs error before ranking
 ```
 
 See §5 for what each setting does. `plot_settings.ci_style` (`shade`,
@@ -1288,3 +1290,42 @@ assigning σo directly as the prior error lets later filters inflate it
 again; scaling your existing error model by the ratio is the alternative.
 Review the numbers, iterate (re-run the DA and diagnose again) and do not
 apply them blindly.
+
+### 5.7 Ensemble reliability: rank histograms and spread-skill
+
+For cycling experiments with `n_member > 1`, the statistics stage also
+writes, in the `omb` group:
+
+| Variable | Where | Meaning |
+|---|---|---|
+| `RankHistogram` | `0D/<domain>` (`nRank` = n_member + 1) and `1D/<profile>` (level × rank) | how many observations fall at each rank among the members |
+| `SpreadSkillCount`, `SpreadSkillTotalSpreadMS`, `SpreadSkillSpreadMS`, `SpreadSkillOMBMS`, `SpreadSkillOMBMean` | `0D/<domain>` (`nSpreadBins`) | per-bin count and mean squares, in fixed bins of the per-observation total spread (`SpreadBinEdges`, 40 per decade) |
+
+Before ranking, every member value is perturbed with a random draw from the
+observation error `ObsError` (Hamill 2001, *MWR* 129, 550–560). Without the
+perturbation, a perfectly reliable ensemble still looks under-dispersive,
+because the observations carry their own error. Set
+`rank_histogram_perturb: false` to rank against the raw members.
+
+All of these quantities add across cycles. The figures are drawn when
+`plot_settings.generate_ensemble_diagnostics` is on (the default):
+
+- **`rank_histogram/rank_histogram_<domain>`:** frequency relative to a flat
+  histogram (1 = reliable).
+  - A U shape means the spread is too small; a dome means it is too large; a
+    slope means a bias.
+  - Each panel lists the *outlier ratio*: the share of observations in the two
+    extreme ranks, divided by its expected value 2/(n_member+1).
+  - It also lists Δ, the mean |frequency − 1|, which is 0 when flat.
+- **`rank_histogram/rank_histogram_<profile>_<exp>`:** the same as a rank ×
+  level map (by latitude for radiances), global domain only.
+- **`spread_skill/spread_skill_<domain>`:** observations grouped by total
+  spread into up to `plot_settings.spread_skill.groups` (default 10) groups of
+  about equal count. Groups with fewer than `spread_skill.min_count` (default
+  50) observations are dropped. The plot shows RMS(OMB) against total spread
+  per group; points above the 1:1 line mean the spread is too small for the
+  error.
+
+The total spread includes the assumed observation error, so a mis-specified
+observation error (see §5.6) shows up here too. Read the two diagnostics
+together.

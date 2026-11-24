@@ -3,6 +3,8 @@
 import glob
 import os
 import sys
+import warnings
+import zlib
 from datetime import datetime
 from typing import Dict, Optional, Union
 
@@ -192,6 +194,38 @@ def _read_obs_type(f, diag_var: Union[str, int]) -> np.ndarray:
 _HOFX_IS_INNOVATION = ["atmosphericRefractivity", "bendingAngle"]
 
 
+def _observation_rank(members: np.ndarray, obs_value, innov, obserr,
+                      perturb: bool = True, seed: int = 0) -> np.ndarray:
+    """Rank (0..n_member) of each observation among its ensemble members,
+    as float with NaN where any member or the observation is missing.
+
+    The observation is ObsValue when available, else innov + member mean.
+    With `perturb`, every member value gets an independent N(0, obserr^2)
+    draw first, so that a reliable ensemble gives a flat histogram even
+    though observations carry their own error (Hamill 2001, MWR 129,
+    550-560). Ties are broken at random."""
+    members = np.asarray(members, dtype=np.float64)
+    if obs_value is not None:
+        y = np.asarray(obs_value, dtype=np.float64)
+        y = np.where(np.abs(y) < 1.0e30, y, np.nan)
+    elif innov is not None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            y = np.asarray(innov, dtype=np.float64) + np.nanmean(members, axis=0)
+    else:
+        return None
+    rng = np.random.default_rng(seed)
+    if perturb and obserr is not None:
+        err = np.asarray(obserr, dtype=np.float64)
+        err = np.where(np.isfinite(err) & (err > 0) & (err < 1.0e10), err, 0.0)
+        members = members + rng.standard_normal(members.shape) * err[None, :]
+    ok = np.all(np.isfinite(members), axis=0) & np.isfinite(y)
+    below = np.sum(members < y[None, :], axis=0)
+    ties = np.sum(members == y[None, :], axis=0)
+    rank = below + np.floor(rng.random(y.shape) * (ties + 1))
+    return np.where(ok, rank, np.nan)
+
+
 def _ensemble_spread(members: np.ndarray, ddof: int, finite_correction: bool) -> np.ndarray:
     """Per-observation ensemble spread over axis 0 (NaN members ignored):
     sqrt of the variance with ``ddof``, times (N+1)/N when
@@ -266,6 +300,7 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
         'spread': None,
         'totSpread': None,
         'obserr': None,
+        'rank': None,
     }
 
     try:
@@ -346,6 +381,13 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
                 obserr = read('ObsError')
                 obs_vector['totSpread'] = np.sqrt(np.nan_to_num(obs_vector['spread'], nan=0.)**2+
                     np.nan_to_num(obserr, nan=0.0)**2.0)
+                if (settings is not None and settings.get("ensemble_diagnostics")
+                        and outerloop == 0 and diag_var not in _HOFX_IS_INNOVATION):
+                    obs_vector['rank'] = _observation_rank(
+                        hofx_ens, read('ObsValue') if 'ObsValue' in f else None,
+                        obs_vector['innov'], obserr,
+                        perturb=bool(settings.get("rank_histogram_perturb", True)),
+                        seed=zlib.crc32(f"{os.path.basename(filename)}:{diag_var}".encode()))
 
             # Some sensors share one IODA file with another sensor and are
             # distinguished by their ObsType code (e.g. sondes vs. profiler
