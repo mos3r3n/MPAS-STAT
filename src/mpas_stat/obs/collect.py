@@ -900,3 +900,42 @@ def collect_obs_normalized_departures(diag_base_dir, exp_name, diag_obs, cycles,
             entry["edges"] = edges
             out[var] = entry
     return out
+
+
+# ----------------------------------------------------------------------------
+# Radiance channel x channel covariances (statistics.channel_correlations):
+# count-weighted pooling of the per-cycle mean cross-products.
+# ----------------------------------------------------------------------------
+def collect_channel_covariance(diag_base_dir, exp_name, diag_obs, cycles, domain):
+    """{"channels", "R", "B", "D", "count", "n_cycles"} pooled over cycles,
+    or {} when no file has the channel_covariance group."""
+    from .channel_cov import CHANNEL_COV_KEYS
+    sums, count, channels, ncyc = {}, None, None, 0
+    for c in cycles:
+        f = obs_diag_file(diag_base_dir, exp_name, diag_obs, c)
+        if not os.path.exists(f):
+            continue
+        with nc.Dataset(f, "r") as ds:
+            grp = _subgroup(ds, ("channel_covariance", domain))
+            if grp is None:
+                continue
+            ch = np.asarray(ds["channel_covariance"].variables["Channels"][:])
+            if channels is None:
+                channels = ch
+            elif not np.array_equal(ch, channels):
+                continue
+            n = np.nan_to_num(np.asarray(grp.variables["PairCount"][:], dtype=np.float64))
+            count = n if count is None else count + n
+            for name, prefix in CHANNEL_COV_KEYS:
+                if prefix == "chcov_n":
+                    continue
+                m = np.asarray(grp.variables[name][:], dtype=np.float64)
+                sums[name] = sums.get(name, 0.0) + np.where(np.isfinite(m), n * m, 0.0)
+            ncyc += 1
+    if count is None or not np.any(count > 0):
+        return {}
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = {k: np.where(count > 0, v / count, np.nan) for k, v in sums.items()}
+    return {"channels": channels, "R": mean["ObsErrorCovDesroziers"],
+            "B": mean["BkgErrorCovDesroziers"], "D": mean["OMBCov"], "count": count,
+            "n_cycles": ncyc}

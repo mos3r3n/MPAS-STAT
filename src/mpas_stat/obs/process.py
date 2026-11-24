@@ -6,6 +6,7 @@ from typing import Dict, Optional, Tuple
 
 import numpy as np
 
+from .channel_cov import CHANNEL_COV_KEYS, correlation_channels, store_channel_covariance
 from .binning import (
     _apply_domain_mask,
     calculate_stats,
@@ -358,7 +359,45 @@ def process_experiment(config: Dict, diag_obs: str) -> Dict:
                 _store_innovation_stats(results, iexp, it, iv, omb_vec, oma_vec,
                                         domains, levels, bin_method, grids, settings)
 
+    if settings.get("channel_correlations") and bin_method == 3:
+        _channel_covariances(results, config, diag_obs, experiments, times, domains,
+                             obs_config, settings, reader_settings)
+
     return results
+
+
+def _channel_covariances(results, config, diag_obs, experiments, times, domains,
+                         obs_config, settings, reader_settings) -> None:
+    """Desroziers channel x channel covariances (see mpas_stat.obs.channel_cov)
+    for every "da" experiment with OMA, per cycle and domain."""
+    exps = [e for e in experiments if e["oma_compared"]]
+    if not exps:
+        return
+    rs = dict(reader_settings or {}, ensemble_diagnostics=False)
+    channels = None
+    for it, cycle_time in enumerate(times):
+        for e in exps:
+            fd = build_filename(e["base_dir"], e["name"], e["type"], e["nmember"],
+                                cycle_time, diag_obs)
+            if not fd.get("ana"):
+                continue
+            if channels is None:
+                channels = correlation_channels(settings, diag_obs, obs_config.variables,
+                                                fd["bak"] if os.path.exists(fd["bak"]) else None)
+                shape = (len(config["experiments"]["names"]), len(domains), len(times),
+                         len(channels), len(channels))
+                for _, prefix in CHANNEL_COV_KEYS:
+                    fill = 0.0 if prefix == "chcov_n" else np.nan
+                    results[f"{prefix}_omb"] = np.full(shape, fill)
+                results["covariance_channels"] = channels
+            omb = [load_observation_data(fd["bak"], diag_obs, ch, 3, outerloop=0,
+                                         nmember=e["nmember"], settings=rs) for ch in channels]
+            oma = [load_observation_data(fd["ana"], diag_obs, ch, 3,
+                                         outerloop=e["outerloop_ana"], nmember=e["nmember"],
+                                         settings=rs) for ch in channels]
+            if any(v is None or v.get("innov") is None for v in omb + oma):
+                continue
+            store_channel_covariance(results, (e["iexp"], it), omb, oma, domains)
 
 
 def _store_innovation_stats(results, iexp, it, iv, omb_vec, oma_vec, domains,

@@ -676,6 +676,100 @@ class TestObsDisplaySettings(unittest.TestCase):
         self.assertEqual(base["plot_style"]["font_size"], 14)
 
 
+class TestChannelCovariance(unittest.TestCase):
+    """Desroziers channel covariances recover a KNOWN correlated R for an
+    optimal analysis (K = B (B + R)^-1), also with a separate, reordered
+    analysis file (ensemble layout)."""
+
+    NCH, RHO_R, RHO_B = 9, 0.5, 0.8
+    SO = np.array([3.0, 2.5, 2.0, 0.6, 0.30, 0.25, 0.25, 0.30, 0.35])
+    SB = np.array([2.0, 1.5, 1.0, 0.4, 0.25, 0.22, 0.22, 0.28, 0.35])
+
+    def _cov(self, sig, rho):
+        i = np.arange(self.NCH)
+        return np.outer(sig, sig) * rho ** np.abs(i[:, None] - i[None, :])
+
+    def _run(self, ensemble):
+        from mpas_stat.obs.common import load_config
+        from mpas_stat.obs.process import process_experiment
+        from mpas_stat.obs.writer import write_obs_diag_files
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp)
+        R, B = self._cov(self.SO, self.RHO_R), self._cov(self.SB, self.RHO_B)
+        K = B @ np.linalg.inv(B + R)
+        rng = np.random.default_rng(7)
+        n, cycles = 8000, ["2024091300", "2024091306", "2024091312", "2024091318"]
+        for c in cycles:
+            db = os.path.join(tmp, "exp", "CyclingDA", c, "dbOut")
+            os.makedirs(db)
+            lat, lon = rng.uniform(-60, 60, n), rng.uniform(0, 360, n)
+            eo = rng.standard_normal((n, self.NCH)) @ np.linalg.cholesky(R).T
+            eb = rng.standard_normal((n, self.NCH)) @ np.linalg.cholesky(B).T
+            d = eo - eb
+            oa = d - d @ K.T
+            files = [("obsout_da_amsua_n18.h5", np.arange(n), {"ombg": d, "oman": oa})]
+            if ensemble:
+                files = [("obsout_da_amsua_n18.h5", np.arange(n), {"ombg": d}),
+                         ("obsout_da_amsua_n18_ana.h5", rng.permutation(n), {"oman": oa})]
+            for fname, order, groups in files:
+                with h5py.File(os.path.join(db, fname), "w") as f:
+                    md = f.create_group("MetaData")
+                    md["latitude"], md["longitude"] = lat[order], lon[order]
+                    for g, val in groups.items():
+                        f.require_group(g)["brightnessTemperature"] = val[order]
+                    for q in ("EffectiveQC0", "EffectiveQC2"):
+                        f.require_group(q)["brightnessTemperature"] = np.zeros((n, self.NCH), "i4")
+                    f.require_group("ObsError")["brightnessTemperature"] = np.tile(self.SO, (n, 1))[order]
+                    if ensemble:
+                        for k in range(3):
+                            f.require_group(f"hofx0_{k+1}")["brightnessTemperature"] = \
+                                250 + rng.standard_normal((n, self.NCH))
+        cfg_path = os.path.join(tmp, "cfg.yaml")
+        Path(cfg_path).write_text(
+            f"paths: {{da_dir: {tmp}, hofx_dir: {tmp}, diag_dir: {tmp}/diag, graphic_dir: {tmp}/fig}}\n"
+            f"experiments: {{names: [exp], types: [da], outerloop: [2], n_member: [{3 if ensemble else 1}]}}\n"
+            "sensors: [amsua_n18]\ndomains: {global: [null, null, null, null], "
+            "NH: [0.0, 90.0, -180.0, 180.0]}\n"
+            "plot_settings: {apply_domains: [global, NH], latlon_domain: global}\n"
+            "time_settings: {start_time: '2024-09-13 00:00:00', end_time: '2024-09-13 18:00:00', interval: 6}\n"
+            "statistics: {correlation_channels: {amsua_n18: all}}\n")
+        config = load_config(cfg_path)
+        write_obs_diag_files(process_experiment(config, "amsua_n18"), config, "amsua_n18",
+                             f"{tmp}/diag")
+        return config, f"{tmp}/diag", R
+
+    def _check(self, ensemble):
+        from mpas_stat.obs.channel_cov import correlation_from_cov
+        from mpas_stat.obs.collect import collect_channel_covariance
+        from mpas_stat.obs.common import generate_cycles, resolve_time_settings
+        config, diag, R = self._run(ensemble)
+        cycles = generate_cycles(*resolve_time_settings(config, "amsua_n18"))
+        cov = collect_channel_covariance(diag, "exp", "amsua_n18", cycles, "global")
+        self.assertEqual(list(cov["channels"]), list(range(1, self.NCH + 1)))   # "all"
+        self.assertEqual(cov["n_cycles"], 4)
+        sigma, corr, min_eig = correlation_from_cov(cov["R"])
+        np.testing.assert_allclose(sigma, self.SO, rtol=0.05)
+        true_corr = R / np.outer(self.SO, self.SO)
+        np.testing.assert_allclose(corr, true_corr, atol=0.05)
+        self.assertGreater(min_eig, 0.0)
+        nh = collect_channel_covariance(diag, "exp", "amsua_n18", cycles, "NH")
+        self.assertLess(nh["count"][0, 0], cov["count"][0, 0])            # domain mask
+        return config, diag
+
+    def test_deterministic_recovers_correlated_R_and_exports(self):
+        config, diag = self._check(ensemble=False)
+        from mpas_stat.obs.error_export import export_error_estimates
+        files = export_error_estimates(config, "amsua_n18", diag)
+        rfile = next(f for f in files if "desroziers_R_" in f and f.endswith(".yaml"))
+        import yaml
+        doc = yaml.safe_load(open(rfile))
+        self.assertEqual(len(doc["correlation"]), self.NCH)
+        self.assertAlmostEqual(doc["correlation"][3][4], self.RHO_R, delta=0.05)
+
+    def test_ensemble_reordered_analysis_file(self):
+        self._check(ensemble=True)
+
+
 class TestScorecard(unittest.TestCase):
     """The scorecard reports a significant improvement where the test
     experiment has a smaller background error, and nothing significant

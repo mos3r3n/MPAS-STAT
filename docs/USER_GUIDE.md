@@ -597,6 +597,8 @@ statistics:
   ensemble_diagnostics: true    # rank histograms + spread-skill, n_member > 1 (§5.7)
   rank_histogram_perturb: true  # perturb members with the obs error before ranking
   normalized_departures: true   # departures / assumed obs error (and / total spread) (§5.8)
+  channel_correlations: true    # radiance channel x channel Desroziers covariances (§5.9)
+  correlation_channels: {}      # e.g. {amsua_n19: all, iasi_metop-b: [16, 38, 49]}
 ```
 
 See §5 for what each setting does. `plot_settings.ci_style` (`shade`,
@@ -1370,3 +1372,43 @@ How to read them:
 - **Tails:** heavier than the Gaussian means gross errors or non-Gaussian
   errors. That is where QC thresholds or a Huber norm act, and it matters for
   the significance of RMS differences.
+
+### 5.9 Inter-channel observation-error correlations (radiances)
+
+For radiance sensors in "da" experiments with OMA, the Desroziers estimate
+of §5.6 is extended to every pair of channels i, j:
+
+    R_ij ≈ mean[(O−A)_i (O−B)_j]     B_ij ≈ mean[(A−B)_i (O−B)_j]     D_ij = mean[(O−B)_i (O−B)_j]
+
+Each is taken over the locations where both channels pass QC in O−B and
+O−A. OMB and OMA rows are matched by location, so the separate, reordered
+`_ana.h5` file of an ensemble run works too.
+
+**Channels.** By default the channels are the sensor's configured channels.
+`statistics.correlation_channels` maps a sensor to a list of channels, or to
+`all` (every channel in the file).
+
+**Where it is stored.** Each statistics file gets a `channel_covariance/`
+group with `Channels`, and one subgroup per domain holding
+`ObsErrorCovDesroziers`, `BkgErrorCovDesroziers`, `OMBCov` and `PairCount`.
+These are pooled over cycles, weighted by count.
+
+**Outputs:**
+
+- **Figure** `<sensor>/channel_correlation/channel_correlation_<domain>`:
+  the correlation matrix of the symmetrized R (top) and of B (bottom), one
+  column per experiment. The title gives the smallest eigenvalue of R. It is
+  switched by `plot_settings.generate_channel_correlations`.
+- **Export** `<diag_dir>/<exp>/VerifyOBS/ObsErrorEstimates/desroziers_R_<sensor>_<cycles>.{csv,yaml}`
+  (global domain): channels, σ per channel and the correlation matrix, so that
+  R = diag(σ) · C · diag(σ). The files also give the smallest eigenvalue and
+  the smallest pair count.
+
+**Caveats.**
+- R is exact only for an optimal analysis.
+- The estimate is not symmetric in general; it is symmetrized here.
+- Sampling noise can make it indefinite (smallest eigenvalue < 0). Regularize
+  it, e.g. by eigenvalue clipping or reconditioning, before using it as a
+  covariance.
+- The exported files are not in any UFO-specific format; convert them to what
+  your observation-error covariance model reads.

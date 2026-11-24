@@ -64,3 +64,4 @@ statistics:
   common_sample: true
   error_diagnostics: true
   normalized_departures: true           # bias and tails in units of the assumed error
+  channel_correlations: true            # radiances: desroziers_R_* correlation tables
