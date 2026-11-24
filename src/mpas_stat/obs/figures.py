@@ -53,6 +53,7 @@ from ..core.bootstrap import get_bootstrap_settings
 from ..core.jobs import lead_cfg as _lead_cfg
 from ..core.jobs import resolve_n_workers, run_job
 from ..graphics.functions import (
+    plot_error_consistency_1d,
     plot_forecast_lead_0d,
     plot_forecast_time_level_2d,
     plot_lat_lon_2d,
@@ -64,6 +65,7 @@ from ..graphics.functions import (
     plot_time_series_reduction_0d,
 )
 from .collect import (
+    collect_obs_error_profiles,
     collect_obs_forecast_lat_lon_2d,
     collect_obs_forecast_lat_vert_2d,
     collect_obs_forecast_lead_0d,
@@ -90,8 +92,8 @@ from .common import (
 )
 from .experiments import (
     _base_graphic_cfg,
-    _ci_display_settings,
     _build_forecast_experiments,
+    _ci_display_settings,
     _comparison_graphic_cfg,
     _experiments_for_diagtype,
     _profile_axis_meta,
@@ -278,6 +280,54 @@ def generate_profile_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
                 }
                 jobs.append((plot_profile_reduction_1d,
                             (profiles_omb, profiles_oma, profile_key, cfg_red), {}))
+    return jobs
+
+
+def generate_error_consistency_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
+    """One observation-error consistency figure per domain (Desroziers
+    estimates vs. assumed observation error, plus the ensemble consistency
+    ratio) for the "da" experiments that have OMA -- see
+    plot_error_consistency_1d. Skipped when statistics.error_diagnostics or
+    plot_settings.generate_error_consistency is off."""
+    settings = resolve_statistics_settings(config)
+    if not settings.get("error_diagnostics"):
+        return []
+    if not config["plot_settings"].get("generate_error_consistency", True):
+        return []
+    names, labels, colors = _experiments_for_diagtype(config, "oma")
+    if not names:
+        return []
+
+    bin_method = get_bin_method(diag_obs)
+    display_vars = display_var_names(diag_obs)
+    raw_vars = get_obs_config(diag_obs).variables
+    domains = list(resolve_domains(config).keys())
+    adjusted_start, end_time, interval = resolve_time_settings(config, diag_obs)
+    cycles = generate_cycles(adjusted_start, end_time, interval)
+    coord_label, invert_y = _profile_axis_meta(bin_method)
+
+    if bin_method == 3:
+        if "global" not in domains:
+            return []
+        domain_loop = ["global"]
+    else:
+        domain_loop = domains
+
+    cfg = _comparison_graphic_cfg(config, graphic_out_dir, names, labels, colors)
+    cfg["variables"] = display_vars
+
+    jobs = []
+    for domain in domain_loop:
+        profile_key = profile_key_for_domain(bin_method, domain)
+        ErrProfiles = {
+            name: collect_obs_error_profiles(
+                diag_base_dir, name, diag_obs, cycles, display_vars, raw_vars,
+                profile_key, coord_label, invert_y,
+                time_aggregation=settings["time_aggregation"])
+            for name in names
+        }
+        if any(ErrProfiles.values()):
+            jobs.append((plot_error_consistency_1d, (ErrProfiles, profile_key, cfg), {}))
     return jobs
 
 
@@ -704,6 +754,7 @@ def generate_plots(config, diag_obs, graphic_out_dir, diag_base_dir):
         return jobs
 
     jobs += generate_profile_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
+    jobs += generate_error_consistency_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
     jobs += generate_lat_lon_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
     jobs += generate_time_level_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
     jobs += generate_lat_vert_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)

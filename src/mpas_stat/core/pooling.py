@@ -46,6 +46,8 @@ def stat_kind(stat_name):
         return "std"
     if s in ("spread", "totalspread", "totspread"):
         return "rms"          # pooled as sqrt(mean of squares)
+    if s in ("obserrordesroziers", "bkgerrordesroziers", "obserrorassumed"):
+        return "rms"          # sqrt of a pooled mean product / mean square
     return "plain"
 
 

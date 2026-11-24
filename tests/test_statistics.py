@@ -434,6 +434,84 @@ class TestColourScales(unittest.TestCase):
         self.assertEqual(_palette({}), CVD_SAFE_PALETTE)
 
 
+class TestErrorConsistencyDiagnostics(unittest.TestCase):
+    """Desroziers estimates recover KNOWN observation/background errors for an
+    optimal analysis, also when OMA comes from a separate, reordered file,
+    and the ensemble consistency ratio is ~1 for a consistent ensemble."""
+
+    SO, SB, N = 2.0, 1.5, 6000
+
+    def _write(self, tmp, nmember=1, assumed=1.5):
+        rng = np.random.default_rng(3)
+        n, so, sb = self.N, self.SO, self.SB
+        lat, lon, p = rng.uniform(-60, 60, n), rng.uniform(0, 360, n), rng.uniform(2e4, 1e5, n)
+        xb = sb * rng.standard_normal(n)
+        y = so * rng.standard_normal(n)
+        xa = xb + sb**2 / (sb**2 + so**2) * (y - xb)
+        members = xb[None, :] + sb * rng.standard_normal((nmember, n))
+        members -= members.mean(0) - xb
+        db = os.path.join(tmp, "exp", "CyclingDA", "2024091306", "dbOut")
+        os.makedirs(db)
+        files = [("obsout_da_aircraft.h5", np.arange(n), ("ombg", y - xb), "EffectiveQC0")]
+        if nmember > 1:   # ensemble: OMA in a separate, REORDERED file
+            files.append(("obsout_da_aircraft_ana.h5", rng.permutation(n), ("oman", y - xa), "EffectiveQC2"))
+        for fname, order, (grp, val), qc in files:
+            with h5py.File(os.path.join(db, fname), "w") as f:
+                md = f.create_group("MetaData")
+                md["latitude"], md["longitude"], md["pressure"] = lat[order], lon[order], p[order]
+                for v in ("windEastward", "windNorthward", "airTemperature"):
+                    f.require_group("ObsValue")[v] = y[order]
+                    f.require_group(grp)[v] = val[order]
+                    f.require_group(qc)[v] = np.zeros(n, "i4")
+                    f.require_group("ObsError")[v] = np.full(n, so)
+                    f.require_group("EffectiveError2")[v] = np.full(n, assumed * so)
+                    if nmember == 1:
+                        f.require_group("oman")[v] = (y - xa)[order]
+                        f.require_group("EffectiveQC2")[v] = np.zeros(n, "i4")
+                    for k in range(nmember if nmember > 1 else 0):
+                        f.require_group(f"hofx0_{k+1}")[v] = members[k][order]
+        return db
+
+    def _run(self, nmember, method="weighted"):
+        from mpas_stat.obs.common import load_config
+        from mpas_stat.obs.process import process_experiment
+        from mpas_stat.obs.writer import write_obs_diag_files
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp)
+        self._write(tmp, nmember)
+        cfg_path = os.path.join(tmp, "cfg.yaml")
+        Path(cfg_path).write_text(
+            f"paths: {{da_dir: {tmp}, hofx_dir: {tmp}, diag_dir: {tmp}/diag, graphic_dir: {tmp}/fig}}\n"
+            f"experiments: {{names: [exp], types: [da], outerloop: [2], n_member: [{nmember}]}}\n"
+            "sensors: [aircraft]\ndomains: {global: [null, null, null, null]}\n"
+            "plot_settings: {apply_domains: [global], latlon_domain: global}\n"
+            "time_settings: {start_time: '2024-09-13 06:00:00', end_time: '2024-09-13 06:00:00', interval: 6}\n"
+            f"statistics: {{method: {method}}}\n")
+        config = load_config(cfg_path)
+        write_obs_diag_files(process_experiment(config, "aircraft"), config, "aircraft", f"{tmp}/diag")
+        return nc4.Dataset(f"{tmp}/diag/exp/VerifyOBS/2024091306/obsstat_aircraft.2024-09-13_06.00.00.nc")
+
+    def test_deterministic_recovers_known_errors(self):
+        with self._run(1) as ds:
+            g = ds["omb/airTemperature/0D/global"]
+            self.assertAlmostEqual(float(g["ObsErrorDesroziers"][...]), self.SO, delta=0.06)
+            self.assertAlmostEqual(float(g["BkgErrorDesroziers"][...]), self.SB, delta=0.06)
+            self.assertAlmostEqual(float(g["ObsErrorAssumed"][...]), 1.5 * self.SO, places=4)
+            self.assertNotIn("ObsErrorDesroziers", ds["oma/airTemperature/0D/global"].variables)
+
+    def test_ensemble_reordered_analysis_file_and_consistency_ratio(self):
+        with self._run(10) as ds:
+            g = ds["omb/windEastward/0D/global"]
+            self.assertAlmostEqual(float(g["ObsErrorDesroziers"][...]), self.SO, delta=0.06)
+            self.assertAlmostEqual(float(g["BkgErrorDesroziers"][...]), self.SB, delta=0.06)
+            cr = float(g["TotalSpread"][...]) / float(g["RMS"][...])
+            self.assertAlmostEqual(cr, 1.0, delta=0.05)
+
+    def test_legacy_writes_no_error_diagnostics(self):
+        with self._run(1, method="legacy") as ds:
+            self.assertNotIn("ObsErrorDesroziers", ds["omb/airTemperature/0D/global"].variables)
+
+
 class TestDatelineDomains(unittest.TestCase):
     def test_mask_crosses_dateline(self):
         lon = np.array([175.0, -175.0, 0.0, -170.0])

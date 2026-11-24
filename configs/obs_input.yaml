@@ -68,3 +68,4 @@ statistics:
   common_sample: true       # one matched observation sample for everything compared
   spread_ddof: 1
   spread_finite_ensemble_correction: true
+  error_diagnostics: true   # Desroziers sigma_o / sigma_b and assumed obs error (OMB+OMA runs)

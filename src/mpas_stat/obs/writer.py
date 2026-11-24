@@ -9,6 +9,7 @@ import netCDF4 as nc4
 import numpy as np
 
 from .common import (
+    ERROR_DIAG_KEYS,
     STAT_KEYS,
     STAT_KEYS_2D,
     nc_group_name,
@@ -90,7 +91,7 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
                 d0 = var_grp.createGroup("0D")
                 for idom, domain in enumerate(domains):
                     region_grp = d0.createGroup(domain)
-                    for stat_disp, prefix in STAT_KEYS:
+                    for stat_disp, prefix in STAT_KEYS + ERROR_DIAG_KEYS:
                         key = f"{prefix}_{diagtype}"
                         if key not in results:
                             continue
@@ -102,7 +103,7 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
                 d1 = var_grp.createGroup("1D")
                 for pkey, idom in profile_entries:
                     prof_grp = d1.createGroup(pkey)
-                    for stat_disp, prefix in STAT_KEYS:
+                    for stat_disp, prefix in STAT_KEYS + ERROR_DIAG_KEYS:
                         key = f"{prefix}_{diagtype}_bin"
                         if key not in results:
                             continue

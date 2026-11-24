@@ -102,3 +102,14 @@ def restrict_to_common_sample(vectors: List[Optional[dict]],
         new["qc"] = np.where(keep, 0.0, np.nan)
         out[i] = new
     return out
+
+
+def paired_indices(vec_a: dict, vec_b: dict):
+    """Indices (ia, ib) of observations valid in BOTH vectors, matched by
+    value (see observation_keys), e.g. the OMB and OMA of the same
+    observations for Desroziers diagnostics. Works whether or not the two
+    vectors come from the same file or share an ordering."""
+    ka, kb = observation_keys(vec_a), observation_keys(vec_b)
+    va, vb = np.flatnonzero(valid_mask(vec_a)), np.flatnonzero(valid_mask(vec_b))
+    _, ia, ib = np.intersect1d(ka[va], kb[vb], assume_unique=True, return_indices=True)
+    return va[ia], vb[ib]
