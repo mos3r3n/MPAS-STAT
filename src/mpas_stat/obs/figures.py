@@ -58,17 +58,16 @@ from ..graphics.functions import (
     plot_forecast_time_level_2d,
     plot_lat_lon_2d,
     plot_lat_vert_2d,
-    plot_profile_reduction_1d,
     plot_channel_correlation,
     plot_normdep_histogram,
     plot_normdep_profile,
+    plot_profile_diff_1d,
     plot_profiles_1d,
     plot_rank_histogram,
     plot_rank_histogram_levels,
     plot_spread_skill,
     plot_time_level_2d,
     plot_time_series_0d,
-    plot_time_series_reduction_0d,
 )
 from .collect import (
     collect_obs_error_profiles,
@@ -81,6 +80,7 @@ from .collect import (
     collect_obs_lat_vert_2d,
     collect_channel_covariance,
     collect_obs_normalized_departures,
+    collect_obs_profile_pools,
     collect_obs_profiles_1d,
     collect_obs_rank_histograms,
     collect_obs_spread_skill,
@@ -171,13 +171,7 @@ def generate_time_series_graphics(config, diag_obs, graphic_out_dir, diag_base_d
     """Build one time-series job per (domain, statistic), via
     plot_time_series_0d -- returns [] when the config has no "da"/"hofx"-
     typed experiments (e.g. an all-"hofx_forecast" config -- see
-    generate_forecast_lead_graphics()). Also builds one extra per-domain
-    job (plot_time_series_reduction_0d) showing % RMS reduction from OMB to
-    OMA -- the SAME two RMS numbers as the corresponding absolute figure's
-    OMB/OMA lines, just plotted as a single derived percent-change line per
-    "da"-typed experiment (only those actually produce an OMA -- see
-    _experiments_for_diagtype()) instead of two absolute ones. Skipped
-    entirely when no experiment has OMA."""
+    generate_forecast_lead_graphics())."""
     cfg, index_map = _base_graphic_cfg(config, graphic_out_dir)
     pseudo_names = cfg["experiments"]["names"]
     if not pseudo_names:
@@ -202,41 +196,20 @@ def generate_time_series_graphics(config, diag_obs, graphic_out_dir, diag_base_d
         for pseudo_name, (exp_name, diagtype) in zip(pseudo_names, index_map)
     }
 
-    # Real "da"-typed experiments that produce an OMA (see
-    # _experiments_for_diagtype) -- these are the only ones with anything
-    # to reduce; re-keyed from the OMB/OMA pseudo-experiment dicts already
-    # read above rather than reading the diagnosis files a second time.
-    oma_names, oma_labels, oma_colors = _experiments_for_diagtype(config, "oma")
-    stats_omb = {name: per_exp_stats.get(f"{name}__omb", {}) for name in oma_names}
-    stats_oma = {name: per_exp_stats.get(f"{name}__oma", {}) for name in oma_names}
-
     jobs = []
     for domain in domains:
         cfg_dom = dict(cfg)
         cfg_dom["region"] = domain
         for stat_disp, _ in STAT_KEYS:
             jobs.append((plot_time_series_0d, (per_exp_stats, stat_disp, cfg_dom), {}))
-
-        if oma_names:
-            cfg_red = dict(cfg_dom)
-            cfg_red["experiments"] = {
-                "names": oma_names, "labels": oma_labels, "colors": oma_colors,
-                "linestyles": ["-"] * len(oma_names),
-            }
-            jobs.append((plot_time_series_reduction_0d, (stats_omb, stats_oma, cfg_red), {}))
     return jobs
 
 
 def generate_profile_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
     """Build one profile job per (domain, statistic), via plot_profiles_1d
-    -- returns [] when the config has no "da"/"hofx"-typed experiments.
-    Also builds one extra per-domain job (plot_profile_reduction_1d)
-    showing % RMS reduction from OMB to OMA vs. level -- the SAME RMS
-    profiles as the corresponding absolute figure's OMB/OMA lines, just
-    plotted as a single derived percent-change line per "da"-typed
-    experiment (only those actually produce an OMA -- see
-    _experiments_for_diagtype()) instead of two absolute ones. Skipped
-    entirely when no experiment has OMA."""
+    -- returns [] when the config has no "da"/"hofx"-typed experiments --
+    plus the experiment-vs-reference difference profiles (O-B vs O-B and
+    O-A vs O-A, see _profile_diff_jobs)."""
     cfg, index_map = _base_graphic_cfg(config, graphic_out_dir)
     pseudo_names = cfg["experiments"]["names"]
     if not pseudo_names:
@@ -253,10 +226,6 @@ def generate_profile_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
 
     coord_label, invert_y = _profile_axis_meta(bin_method)
 
-    # Real "da"-typed experiments that produce an OMA (see
-    # _experiments_for_diagtype) -- these are the only ones with anything
-    # to reduce.
-    oma_names, oma_labels, oma_colors = _experiments_for_diagtype(config, "oma")
 
     # Radiances (bin_method 3) only have a meaningful, region-independent
     # latitude-binned profile (computed once, using the "global" domain's
@@ -285,19 +254,46 @@ def generate_profile_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
             if any(Profiles.values()):
                 jobs.append((plot_profiles_1d, (Profiles, profile_key, stat_disp, cfg), {}))
 
-        if oma_names:
-            profiles_omb = {name: per_exp_profiles.get(f"{name}__omb", {}).get("RMS", {})
-                            for name in oma_names}
-            profiles_oma = {name: per_exp_profiles.get(f"{name}__oma", {}).get("RMS", {})
-                            for name in oma_names}
-            if any(profiles_omb.values()) and any(profiles_oma.values()):
-                cfg_red = dict(cfg)
-                cfg_red["experiments"] = {
-                    "names": oma_names, "labels": oma_labels, "colors": oma_colors,
-                    "linestyles": ["-"] * len(oma_names),
-                }
-                jobs.append((plot_profile_reduction_1d,
-                            (profiles_omb, profiles_oma, profile_key, cfg_red), {}))
+        jobs += _profile_diff_jobs(config, diag_obs, graphic_out_dir, diag_base_dir, cycles,
+                                   display_vars, raw_vars, profile_key, coord_label, invert_y)
+    return jobs
+
+
+def _profile_diff_jobs(config, diag_obs, graphic_out_dir, diag_base_dir, cycles, display_vars,
+                       raw_vars, profile_key, coord_label, invert_y):
+    """Experiment vs. reference (experiments.names[0]) percent-difference
+    profiles, 100*(exp - ref)/ref, with paired-bootstrap significance --
+    O-B against O-B in <graphic_dir>/<sensor>/omb/profile_diff_1d/ and O-A
+    against O-A in .../oma/profile_diff_1d/, never mixed. One figure per
+    statistic in plot_settings.comparison_relative_reduction_statistics."""
+    stats = config["plot_settings"].get("comparison_relative_reduction_statistics",
+                                        ["RMS", "STD"])
+    jobs = []
+    for diagtype in ("omb", "oma"):
+        names, labels, colors = _experiments_for_diagtype(config, diagtype)
+        if len(names) < 2:
+            continue
+        cfg = _comparison_graphic_cfg(config, os.path.join(graphic_out_dir, diagtype),
+                                      names, labels, colors)
+        cfg["variables"] = display_vars
+        cfg["profile_diff_section"] = "profile_diff_1d"
+        what = "O−B (background)" if diagtype == "omb" else "O−A (analysis)"
+        for stat in stats:
+            profiles = {n: collect_obs_profile_pools(diag_base_dir, n, diagtype, diag_obs, cycles,
+                                                     display_vars, raw_vars, profile_key, stat,
+                                                     coord_label, invert_y)
+                        for n in names}
+            if not profiles.get(names[0]) or not any(profiles[n] for n in names[1:]):
+                continue
+            meaning = ("negative = closer to the observations (better background); "
+                       if diagtype == "omb" else
+                       "negative = closer fit to the observations, which is NOT by "
+                       "itself a better analysis; ")
+            c = dict(cfg, profile_diff_title=(
+                f"{what}: {stat} difference from {labels[0]}, 100·(exp − ref)/ref\n"
+                f"{meaning}▲/▼ significant "
+                f"({get_bootstrap_settings(config)['ci']:g}% paired bootstrap over cycles)"))
+            jobs.append((plot_profile_diff_1d, (profiles, profile_key, stat, c), {}))
     return jobs
 
 

@@ -32,12 +32,10 @@ from .plots_0d import (
     plot_forecast_lead_0d,
     plot_forecast_lead_diff_0d,
     plot_time_series_0d,
-    plot_time_series_reduction_0d,
 )
 from .plots_1d import (
     plot_error_consistency_1d,
     plot_profile_diff_1d,
-    plot_profile_reduction_1d,
     plot_profiles_1d,
 )
 from .plots_matrix import plot_channel_correlation
@@ -115,11 +113,9 @@ __all__ = [
     "_mean_colorbar_limits",
     "_compute_panel_data",
     "plot_time_series_0d",
-    "plot_time_series_reduction_0d",
     "plot_forecast_lead_0d",
     "plot_forecast_lead_diff_0d",
     "plot_profiles_1d",
-    "plot_profile_reduction_1d",
     "plot_profile_diff_1d",
     "plot_time_level_2d",
     "plot_forecast_time_level_2d",

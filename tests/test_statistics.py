@@ -775,13 +775,13 @@ class TestScorecard(unittest.TestCase):
     experiment has a smaller background error, and nothing significant
     where the two experiments are statistically identical."""
 
-    def test_scorecard_cells(self):
+    @classmethod
+    def setUpClass(cls):
         from mpas_stat.obs.common import load_config
         from mpas_stat.obs.process import process_experiment
-        from mpas_stat.obs.scorecard import generate_scorecards, scorecard_data, scorecard_settings
         from mpas_stat.obs.writer import write_obs_diag_files
         tmp = tempfile.mkdtemp()
-        self.addCleanup(__import__("shutil").rmtree, tmp)
+        cls.tmp = tmp
         rng = np.random.default_rng(1)
         n = 3000
         cycles = [f"2024091{3 + i // 4}{(i % 4) * 6:02d}" for i in range(8)]
@@ -813,8 +813,17 @@ class TestScorecard(unittest.TestCase):
             "time_settings: {start_time: '2024-09-13 00:00:00', "
             "end_time: '2024-09-14 18:00:00', interval: 6}\n"
             "bootstrap: {n_boot: 200}\n")
-        config = load_config(cfg_path)
-        write_obs_diag_files(process_experiment(config, "aircraft"), config, "aircraft", tmp)
+        cls.config = load_config(cfg_path)
+        write_obs_diag_files(process_experiment(cls.config, "aircraft"), cls.config,
+                             "aircraft", tmp)
+
+    @classmethod
+    def tearDownClass(cls):
+        __import__("shutil").rmtree(cls.tmp)
+
+    def test_scorecard_cells(self):
+        from mpas_stat.obs.scorecard import generate_scorecards, scorecard_data, scorecard_settings
+        config, tmp = self.config, self.tmp
         data = scorecard_data(config, tmp, "ctl", "tst", "omb", scorecard_settings(config))
         rows = data["rows"]
         t_all = rows.index(("aircraft", "T", "all"))
@@ -830,6 +839,37 @@ class TestScorecard(unittest.TestCase):
         files = generate_scorecards(config, tmp)
         self.assertTrue(any(f.endswith(".png") for f in files))
         self.assertTrue(any(f.endswith(".csv") for f in files))
+
+    def test_profile_diff_omb_and_oma_separately(self):
+        """Test vs control profiles compare O-B with O-B and O-A with O-A
+        (never O-B with O-A), in separate omb/ and oma/ folders."""
+        from mpas_stat.core.bootstrap import get_bootstrap_settings
+        from mpas_stat.core.pooling import entry_difference_ci
+        from mpas_stat.obs.common import generate_cycles, resolve_time_settings
+        from mpas_stat.obs.collect import collect_obs_profile_pools
+        from mpas_stat.obs.figures import _profile_diff_jobs
+        from mpas_stat.core.jobs import run_job
+        cycles = generate_cycles(*resolve_time_settings(self.config, "aircraft"))
+        args = ("aircraft", cycles, ["T", "U"], ["airTemperature", "windEastward"],
+                "vert_pres_profile_global", "RMS", "Pressure (hPa)", True)
+        boot = get_bootstrap_settings(self.config)
+        omb = {e: collect_obs_profile_pools(self.tmp, e, "omb", *args) for e in ("ctl", "tst")}
+        oma = {e: collect_obs_profile_pools(self.tmp, e, "oma", *args) for e in ("ctl", "tst")}
+        self.assertEqual(omb["ctl"]["T"]["pool"]["w"].shape[0], len(cycles))   # aligned
+        d_omb, lo, hi = entry_difference_ci(omb["ctl"]["T"], omb["tst"]["T"], boot)
+        lev = np.nanargmax(omb["ctl"]["T"]["pool"]["w"].sum(0))
+        self.assertAlmostEqual(d_omb[lev], -30.0, delta=4.0)    # test O-B 30 % smaller
+        self.assertLess(hi[lev], 0.0)
+        d_oma, _, _ = entry_difference_ci(oma["ctl"]["T"], oma["tst"]["T"], boot)
+        self.assertLess(abs(d_oma[lev]), 5.0)                   # O-A identical in law
+        jobs = _profile_diff_jobs(self.config, "aircraft", os.path.join(self.tmp, "fig", "aircraft"),
+                                  self.tmp, cycles, ["T", "U"], ["airTemperature", "windEastward"],
+                                  "vert_pres_profile_global", "Pressure (hPa)", True)
+        for job in jobs:
+            self.assertTrue(run_job(job)[0])
+        for diagtype in ("omb", "oma"):
+            folder = os.path.join(self.tmp, "fig", "aircraft", diagtype, "profile_diff_1d")
+            self.assertTrue(any(f.endswith("_RMS.png") for f in os.listdir(folder)))
 
 
 class TestDatelineDomains(unittest.TestCase):
