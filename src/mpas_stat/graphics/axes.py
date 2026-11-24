@@ -25,8 +25,11 @@ def _parse_cycle_time(cycle):
 def _compact_cycle_label(cycle, previous_labeled_cycle=None):
     """Compact time label: only 00Z is labeled; other cycles are blank.
 
-    For 00Z cycles, show day only.  Add month at the first labeled tick or a
-    new month, and add year at the first labeled tick or a new year.
+    The day number is always alone on the first line, so neighbouring day
+    labels never collide with a month name. At the first labeled tick, and
+    whenever the month (or year) changes, a second line gives the month --
+    with the year at the first tick or a new year: "13\nSep 2024", "14",
+    ..., "1\nOct", "1\nJan 2025".
     """
     dt = _parse_cycle_time(cycle)
     if dt is None:
@@ -37,11 +40,10 @@ def _compact_cycle_label(cycle, previous_labeled_cycle=None):
     prev = (_parse_cycle_time(previous_labeled_cycle)
             if previous_labeled_cycle is not None else None)
 
-    label = dt.strftime("%d")
-    if prev is None or dt.month != prev.month or dt.year != prev.year:
-        label += " " + dt.strftime("%b")
-    if prev is None or dt.year != prev.year:
-        label += "\n" + dt.strftime("%Y")
+    label = str(dt.day)
+    new_year = prev is None or dt.year != prev.year
+    if new_year or dt.month != prev.month:
+        label += "\n" + dt.strftime("%b") + (" " + dt.strftime("%Y") if new_year else "")
     return label
 
 

@@ -770,6 +770,21 @@ class TestChannelCovariance(unittest.TestCase):
         self._check(ensemble=True)
 
 
+class TestDateTickLabels(unittest.TestCase):
+    def test_month_and_year_on_their_own_line(self):
+        """Day numbers alone on the first line; month (+ year) on the second,
+        only at the first tick and when the month changes."""
+        from mpas_stat.graphics.axes import _compact_cycle_label as label
+        seq, prev, out = ["2024091300", "2024091306", "2024091400", "2024100100",
+                          "2024100200", "2025010100"], None, []
+        for c in seq:
+            lab = label(c, prev)
+            out.append(lab)
+            prev = c if lab else prev
+        self.assertEqual(out, ["13\nSep 2024", "", "14", "1\nOct", "2", "1\nJan 2025"])
+        self.assertTrue(all("\n" not in lab.split("\n")[0] for lab in out))
+
+
 class TestPlotExtent(unittest.TestCase):
     """Maps and latitude axes zoom to where the data are."""
 
