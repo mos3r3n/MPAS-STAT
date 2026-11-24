@@ -111,6 +111,9 @@ temperature (before 2026-11, `Tv` mistakenly returned potential temperature).
 | `plot_types` | Which figures to generate — see §1.5 |
 | `forecast.*`, `scorecard.*`, `level_slices` | Extended-forecast / scorecard / 2-D-slice-specific settings |
 | `time_aggregation` | How cycles are combined: `pooled` (default) or `mean` — §5.2 |
+| `colorbar.discrete`, `colorbar.levels_diverging`, `colorbar.levels_sequential`, `colorbar.share` | 2-D colour scales: discrete colour levels at rounded values (default), roughly 20 (diverging) / 16 (sequential) bins, limits shared by every panel of a variable row (`share: row`, default) or per panel (`panel`). Diverging scales are symmetric with 0 on a level boundary. Explicit `relative_reduction_vmin/vmax`, `mean_vmin/vmax`, `absolute_vmin/vmax` still fix the limits. |
+| `plot_style.diverging_cmap`, `plot_style.absolute_cmap` | Colour maps for % differences / mean fields (default `RdBu_r`; `RdYlBu_r` is a good alternative) and for absolute statistics (default `YlGnBu`) |
+| `plot_style.palette` | Experiment line colours when `experiments.colors` is not given. Default: black, then ColorBrewer Dark2 (colour-vision-deficiency safe). Obs space: `plot_settings.palette`. |
 | `ci_style` | Bootstrap confidence intervals on line/profile plots: `shade` (coloured band, default), `errorbar`, or `none`. `ci_alpha` sets the band opacity. (Older `profile_ci_style` / `profile_errorbar: false` still work.) |
 
 ### 1.5 Available `plot_types` (model-space)

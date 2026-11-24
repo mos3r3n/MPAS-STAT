@@ -389,6 +389,51 @@ class TestConfidenceIntervalStyle(unittest.TestCase):
         self.assertEqual(_ci_display_settings({"plot_settings": {}}), {})
 
 
+class TestColourScales(unittest.TestCase):
+    def test_nice_symmetric_levels(self):
+        from mpas_stat.graphics.colour import nice_levels
+        lv = nice_levels(-23.7, 23.7, 20, diverging=True)
+        self.assertAlmostEqual(lv[0], -lv[-1])
+        self.assertTrue(np.any(np.isclose(lv, 0.0)))          # 0 on a boundary
+        self.assertGreaterEqual(lv[-1], 23.7)                 # covers the data
+        self.assertLessEqual(lv[-1], 30.0)                    # ...with a clean limit
+        steps = np.diff(lv)
+        np.testing.assert_allclose(steps, steps[0])
+        seq = nice_levels(0.37, 1.42, 16, diverging=False)
+        self.assertLessEqual(seq[0], 0.37)
+        self.assertGreaterEqual(seq[-1], 1.42)
+
+    def test_colour_scale_discrete_shared_and_continuous(self):
+        import matplotlib.colors as mcolors
+        from mpas_stat.graphics.colour import colour_scale
+        a, b = np.array([[-3.0, 1.0]]), np.array([[12.0, -4.0]])
+        cmap, norm, levels = colour_scale("RdBu_r", None, None, {}, True, extend="both",
+                                          data_arrays=[a, b])
+        self.assertIsInstance(norm, mcolors.BoundaryNorm)
+        self.assertGreaterEqual(levels[-1], 12.0)   # shared: covers both panels
+        _, norm2, levels2 = colour_scale("RdBu_r", None, None, {"colorbar": {"discrete": False}},
+                                         True, data_arrays=[a])
+        self.assertIsNone(levels2)
+        self.assertNotIsInstance(norm2, mcolors.BoundaryNorm)
+        _, _, fixed = colour_scale("RdBu_r", -10, 10, {}, True, data_arrays=[b])
+        self.assertEqual((fixed[0], fixed[-1]), (-10.0, 10.0))  # explicit limits win
+
+    def test_colorbar_ticks_keep_zero(self):
+        from mpas_stat.graphics.colour import colorbar_ticks
+        ticks = colorbar_ticks(np.linspace(-20, 20, 21), max_ticks=9)
+        self.assertIn(0.0, ticks)
+        self.assertLessEqual(len(ticks), 11)
+
+    def test_cvd_safe_palette_default(self):
+        from mpas_stat.graphics.colour import CVD_SAFE_PALETTE
+        from mpas_stat.graphics.style import get_exp_plot_settings
+        from mpas_stat.obs.experiments import _palette
+        _, _, colors, _ = get_exp_plot_settings({"experiments": {"names": ["a", "b"]}})
+        self.assertEqual(colors[:2], CVD_SAFE_PALETTE[:2])
+        self.assertEqual(_palette({"plot_settings": {"palette": ["k", "r"]}}), ["k", "r"])
+        self.assertEqual(_palette({}), CVD_SAFE_PALETTE)
+
+
 class TestDatelineDomains(unittest.TestCase):
     def test_mask_crosses_dateline(self):
         lon = np.array([175.0, -175.0, 0.0, -170.0])
