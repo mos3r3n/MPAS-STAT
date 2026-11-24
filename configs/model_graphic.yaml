@@ -10,6 +10,23 @@ figure_format: "pdf"
 # "shade" (coloured band), "errorbar" (error bars) or "none".
 ci_style: shade
 
+# 2-D colour scales (approach from NCAR mpas-jedi-graphics): discrete colour
+# levels at clean, rounded values, shared by all panels of a variable row so
+# experiments can be compared by colour. Diverging scales are symmetric with
+# 0 on a level boundary.
+colorbar:
+  discrete: true          # false -> continuous colour scale
+  levels_diverging: 20    # approximate number of colour bins
+  levels_sequential: 16
+  share: row              # row | panel
+
+plot_style:
+  diverging_cmap: RdBu_r  # e.g. RdYlBu_r; used for % differences and mean fields
+  absolute_cmap: YlGnBu
+  # Experiment line colours when experiments.colors is not given; default is
+  # black + ColorBrewer Dark2 (colour-vision-deficiency safe).
+  # palette: [black, "#d95f02", "#7570b3", "#1b9e77"]
+
 # Render figures in parallel across this many worker processes (each job is
 # one figure's collect+plot step -- see run_graphics() in
 # src/mpas_stat/graphics/driver.py). 1 = sequential (default, unchanged

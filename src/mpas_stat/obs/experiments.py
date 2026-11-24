@@ -1,14 +1,17 @@
 """Experiment lists, colours and graphic cfg dicts for obs-space figures.
 """
+from ..graphics.colour import CVD_SAFE_PALETTE, line_palette
 
 
 # Line colours assigned to experiments by their position in
 # config["experiments"]["names"] (shared by every obs-space figure type, so
 # one experiment keeps the same colour across products).
-EXPERIMENT_PALETTE = [
-    'black', 'blue', 'red', 'green', 'orange', 'brown', 'cyan', 'purple',
-    'magenta', 'olive', 'teal', 'darkred', 'gold', 'navy', 'darkgreen'
-]
+EXPERIMENT_PALETTE = list(CVD_SAFE_PALETTE)
+
+
+def _palette(config):
+    """plot_settings.palette if configured, else the CVD-safe default."""
+    return line_palette({"palette": (config.get("plot_settings") or {}).get("palette")})
 
 
 def _build_pseudo_experiments(config):
@@ -32,7 +35,7 @@ def _build_pseudo_experiments(config):
     exp_names = config["experiments"]["names"]
     exp_labels = config["experiments"].get("labels", exp_names)
     exp_types = config["experiments"].get("types", ["da"] * len(exp_names))
-    palette = EXPERIMENT_PALETTE
+    palette = _palette(config)
 
     names, labels, colors, linestyles, index_map = [], [], [], [], []
     for iexp, (name, label, etype) in enumerate(zip(exp_names, exp_labels, exp_types)):
@@ -69,7 +72,7 @@ def _build_forecast_experiments(config):
     exp_names = config["experiments"]["names"]
     exp_labels = config["experiments"].get("labels", exp_names)
     exp_types = config["experiments"].get("types", ["da"] * len(exp_names))
-    palette = EXPERIMENT_PALETTE
+    palette = _palette(config)
 
     names, labels, colors = [], [], []
     for iexp, (name, label, etype) in enumerate(zip(exp_names, exp_labels, exp_types)):
@@ -99,7 +102,7 @@ def _experiments_for_diagtype(config, diagtype):
     exp_labels = config["experiments"].get("labels", exp_names)
     exp_types = config["experiments"].get("types", ["da"] * len(exp_names))
     plot_oma = config["plot_settings"].get("plot_oma", True)
-    palette = EXPERIMENT_PALETTE
+    palette = _palette(config)
 
     names, labels, colors = [], [], []
     for iexp, (name, label, etype) in enumerate(zip(exp_names, exp_labels, exp_types)):
