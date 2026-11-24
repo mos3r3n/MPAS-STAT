@@ -41,6 +41,7 @@ mpas-stat-model = "mpas_stat.cli.model_stats:main"
 mpas-stat-graphics = "mpas_stat.cli.model_graphics:main"
 mpas-stat-obs = "mpas_stat.cli.obs_stats:main"
 mpas-stat-obs-plot = "mpas_stat.cli.obs_graphics:main"
+mpas-stat-obs-errors = "mpas_stat.cli.obs_errors:main"
 mpas-stat-radar = "mpas_stat.cli.radar_stats:main"
 mpas-stat-radar-plot = "mpas_stat.cli.radar_graphics:main"
 

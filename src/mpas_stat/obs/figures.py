@@ -90,6 +90,7 @@ from .common import (
     resolve_statistics_settings,
     resolve_time_settings,
 )
+from .error_export import export_error_estimates
 from .experiments import (
     _base_graphic_cfg,
     _build_forecast_experiments,
@@ -146,6 +147,12 @@ def _process_sensor(config, diag_obs, sensor_graphic_dir, diag_base_dir):
         if not ok:
             print(f"ERROR in {job[0].__name__} ({diag_obs}):\n{err}")
     print(f"[{diag_obs}] finished {len(jobs)} figures")
+    if config["plot_settings"].get("write_error_tables", True):
+        try:
+            for path in export_error_estimates(config, diag_obs, diag_base_dir):
+                print(f"Saved {path}")
+        except Exception:
+            print(f"ERROR writing observation-error tables ({diag_obs}):\n{traceback.format_exc()}")
     return diag_obs, len(jobs)
 
 

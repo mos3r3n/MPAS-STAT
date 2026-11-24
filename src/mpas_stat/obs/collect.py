@@ -633,35 +633,31 @@ def collect_obs_forecast_time_level_2d(diag_base_dir, exp_name, diag_obs, cycles
     return out
 
 
-def collect_obs_error_profiles(diag_base_dir, exp_name, diag_obs, cycles, display_vars,
-                               raw_vars, profile_key, coord_label, invert_y,
-                               time_aggregation="pooled"):
-    """Observation-error consistency profiles of one "da" experiment from its
-    OMB statistics: ObsErrorAssumed, ObsErrorDesroziers, BkgErrorDesroziers
-    (when the statistics stage wrote them) and, when an ensemble spread was
-    written, ConsistencyRatio = TotalSpread / RMS. Each is aggregated over
-    cycles like the other statistics (pooled by Count by default)."""
+def _error_diag_entries(ncfiles, display_vars, raw_vars, group_path, coord_vars,
+                        time_aggregation):
+    """{var: {name: value}} of the error-consistency quantities in the omb
+    group at `group_path` (see collect_obs_error_profiles), plus "Count".
+    Returns (coords, entries); coords is None when no file had the group's
+    coordinates."""
     names = [k for k, _ in ERROR_DIAG_KEYS] + ["RMS", "TotalSpread", "Count", "Bias"]
     keys = [(n, n) for n in names]
-    ncfiles = [obs_diag_file(diag_base_dir, exp_name, diag_obs, c) for c in cycles]
     coords, per_stat_per_var, _ = _gather_stat_arrays(
-        ncfiles, "omb", display_vars, raw_vars, ("1D", profile_key), keys, ["Levels"])
-    out = {}
-    if coords is None:
-        return out
-    coord, = coords
+        ncfiles, "omb", display_vars, raw_vars, group_path, keys, coord_vars)
 
     def value(name, var):
         arrs = per_stat_per_var[name][var]
         if not arrs:
             return None
+        if name == "Count":
+            return np.nansum(np.stack(arrs, axis=0), axis=0)
         pool = _obs_pool(per_stat_per_var, name, var) if time_aggregation == "pooled" else None
         if pool is not None:
             return pooled_value(pool)
         return np.nanmean(np.stack(arrs, axis=0), axis=0)
 
+    out = {}
     for var in display_vars:
-        entry = {"coord": coord, "coord_label": coord_label, "invert_y": invert_y}
+        entry = {}
         for name, _ in ERROR_DIAG_KEYS:
             v = value(name, var)
             if v is not None and np.any(np.isfinite(v)):
@@ -672,6 +668,39 @@ def collect_obs_error_profiles(diag_base_dir, exp_name, diag_obs, cycles, displa
                 cr = np.where(rms > 0, tot / rms, np.nan)
             if np.any(np.isfinite(cr)):
                 entry["ConsistencyRatio"] = cr
-        if len(entry) > 3:
+        if entry:
+            count = value("Count", var)
+            if count is not None:
+                entry["Count"] = count
             out[var] = entry
-    return out
+    return coords, out
+
+
+def collect_obs_error_profiles(diag_base_dir, exp_name, diag_obs, cycles, display_vars,
+                               raw_vars, profile_key, coord_label, invert_y,
+                               time_aggregation="pooled"):
+    """Observation-error consistency profiles of one "da" experiment from its
+    OMB statistics: ObsErrorAssumed, ObsErrorDesroziers, BkgErrorDesroziers
+    (when the statistics stage wrote them), Count and, when an ensemble
+    spread was written, ConsistencyRatio = TotalSpread / RMS. Each is
+    aggregated over cycles like the other statistics (pooled by Count by
+    default; Count is summed)."""
+    ncfiles = [obs_diag_file(diag_base_dir, exp_name, diag_obs, c) for c in cycles]
+    coords, entries = _error_diag_entries(
+        ncfiles, display_vars, raw_vars, ("1D", profile_key), ["Levels"], time_aggregation)
+    if coords is None:
+        return {}
+    coord, = coords
+    return {var: dict(entry, coord=coord, coord_label=coord_label, invert_y=invert_y)
+            for var, entry in entries.items()}
+
+
+def collect_obs_error_totals(diag_base_dir, exp_name, diag_obs, cycles, display_vars,
+                             raw_vars, domain, time_aggregation="pooled"):
+    """Same quantities as collect_obs_error_profiles, for the whole domain
+    (all levels together, the 0D group): {var: {name: scalar}}."""
+    ncfiles = [obs_diag_file(diag_base_dir, exp_name, diag_obs, c) for c in cycles]
+    _, entries = _error_diag_entries(
+        ncfiles, display_vars, raw_vars, ("0D", domain), [], time_aggregation)
+    return {var: {k: float(np.asarray(v).reshape(-1)[0]) for k, v in e.items()}
+            for var, e in entries.items()}

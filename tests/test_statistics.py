@@ -489,6 +489,7 @@ class TestErrorConsistencyDiagnostics(unittest.TestCase):
             f"statistics: {{method: {method}}}\n")
         config = load_config(cfg_path)
         write_obs_diag_files(process_experiment(config, "aircraft"), config, "aircraft", f"{tmp}/diag")
+        self.config, self.diag_dir = config, f"{tmp}/diag"
         return nc4.Dataset(f"{tmp}/diag/exp/VerifyOBS/2024091306/obsstat_aircraft.2024-09-13_06.00.00.nc")
 
     def test_deterministic_recovers_known_errors(self):
@@ -506,6 +507,28 @@ class TestErrorConsistencyDiagnostics(unittest.TestCase):
             self.assertAlmostEqual(float(g["BkgErrorDesroziers"][...]), self.SB, delta=0.06)
             cr = float(g["TotalSpread"][...]) / float(g["RMS"][...])
             self.assertAlmostEqual(cr, 1.0, delta=0.05)
+
+    def test_export_tables_and_jedi_filter(self):
+        import csv
+        import yaml
+        from mpas_stat.obs.error_export import export_error_estimates
+        self._run(1).close()
+        files = export_error_estimates(self.config, "aircraft", self.diag_dir)
+        self.assertEqual(sorted(os.path.splitext(f)[1] for f in files), [".csv", ".yaml"])
+        csv_path = next(f for f in files if f.endswith(".csv"))
+        self.assertIn(os.path.join("exp", "VerifyOBS", "ObsErrorEstimates"), csv_path)
+        rows = list(csv.DictReader(open(csv_path)))
+        tot = next(r for r in rows if r["variable"] == "T" and r["level"] == "all")
+        self.assertAlmostEqual(float(tot["desroziers_obs_error"]), self.SO, delta=0.06)
+        self.assertAlmostEqual(float(tot["desroziers_to_assumed_ratio"]), 1 / 1.5, delta=0.03)
+        doc = yaml.safe_load(open(next(f for f in files if f.endswith(".yaml"))))
+        flt = doc["variables"]["T"]["jedi_filter"]
+        self.assertEqual(flt["action"]["name"], "assign error")
+        opts = flt["action"]["error function"]["options"]
+        self.assertEqual(opts["xvar"]["name"], "MetaData/pressure")
+        self.assertEqual(len(opts["xvals"]), len(opts["errors"]))
+        self.assertGreater(min(opts["xvals"]), 1000.0)          # Pa, not hPa
+        self.assertTrue(all(abs(e - self.SO) < 0.3 for e in opts["errors"]))
 
     def test_legacy_writes_no_error_diagnostics(self):
         with self._run(1, method="legacy") as ds:

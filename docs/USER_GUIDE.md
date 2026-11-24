@@ -600,7 +600,10 @@ See §5 for what each setting does. `plot_settings.ci_style` (`shade`,
 `errorbar` or `none`) chooses how confidence intervals are drawn on the
 obs-space line and profile plots, as `ci_style` does for model space.
 `plot_settings.generate_error_consistency` (default `true`) turns the
-error-consistency profile figures of §5.6 on or off.
+error-consistency profile figures of §5.6 on or off, and
+`plot_settings.write_error_tables` (default `true`) the error tables that go
+with them (`error_table_min_count`, default 100, is the fewest observations a
+level needs to enter the suggested JEDI filter).
 Domain boxes (`domains`, and
 `plot_settings.latlon_domain`) may cross the dateline: write them as
 `[lat_min, lat_max, 170, -170]` or `[lat_min, lat_max, 170, 190]`.
@@ -1211,3 +1214,46 @@ error statistics; treat them as a consistency check, not a tuning answer
 (Desroziers et al. 2005, *QJRMS* 131, 3385–3396). Values are written only by
 `method: weighted` with `error_diagnostics: true`; radiances are shown for
 the global domain only, and surface obs get no profile figure.
+
+**Exported tables.** The graphics stage also writes, for every experiment
+with OMA and every sensor,
+
+```
+<diag_dir>/<exp>/VerifyOBS/ObsErrorEstimates/
+    desroziers_<sensor>_<first cycle>-<last cycle>.csv
+    desroziers_<sensor>_<first cycle>-<last cycle>.yaml
+```
+
+To write only these (no figures), run
+`mpas-stat-obs-errors -c obs_graphic.yaml` (or
+`python -m mpas_stat.cli.obs_errors -c obs_graphic.yaml`).
+
+- The **CSV** has one row per variable, domain and level, plus an `all`
+  row per variable and domain: count, assumed error, Desroziers σo and σb,
+  their ratio and (ensembles) the consistency ratio. Units are those of the
+  statistics files (specific humidity in g/kg).
+- The **YAML** holds the global-domain profiles in IODA units (specific
+  humidity in kg/kg) and, per variable, a UFO filter that assigns the
+  Desroziers σo:
+
+  ```yaml
+  jedi_filter:
+    filter: Perform Action
+    filter variables: [{name: airTemperature}]
+    action:
+      name: assign error
+      error function:
+        name: ObsFunction/ObsErrorModelStepwiseLinear
+        options:
+          xvar: {name: MetaData/pressure}     # Pa (MetaData/height in m for height bins)
+          xvals: [100000, 92500, ...]
+          errors: [1.21, 1.05, ...]
+  ```
+
+  For radiances it is one `error parameter vector` over the channels.
+
+The "assumed" error is the effective error, i.e. after any QC inflation, so
+assigning σo directly as the prior error lets later filters inflate it
+again; scaling your existing error model by the ratio is the alternative.
+Review the numbers, iterate (re-run the DA and diagnose again) and do not
+apply them blindly.
