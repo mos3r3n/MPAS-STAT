@@ -58,6 +58,9 @@ from ..graphics.functions import (
     plot_forecast_time_level_2d,
     plot_lat_lon_2d,
     plot_lat_vert_2d,
+    plot_channel_correlation,
+    plot_normdep_histogram,
+    plot_normdep_profile,
     plot_profile_diff_1d,
     plot_profiles_1d,
     plot_rank_histogram,
@@ -75,6 +78,8 @@ from .collect import (
     collect_obs_forecast_time_level_2d,
     collect_obs_lat_lon_2d,
     collect_obs_lat_vert_2d,
+    collect_channel_covariance,
+    collect_obs_normalized_departures,
     collect_obs_profile_pools,
     collect_obs_profiles_1d,
     collect_obs_rank_histograms,
@@ -393,6 +398,83 @@ def generate_ensemble_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
               for n in names}
         if any(ss.values()):
             jobs.append((plot_spread_skill, (ss, domain, cfg), {}))
+    return jobs
+
+
+def generate_normdep_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
+    """Normalized-departure histograms (per domain) and profiles (per
+    domain; radiances: global only, by latitude). Skipped when
+    statistics.normalized_departures or
+    plot_settings.generate_normalized_departures is off."""
+    settings = resolve_statistics_settings(config)
+    if not settings.get("normalized_departures"):
+        return []
+    if not config["plot_settings"].get("generate_normalized_departures", True):
+        return []
+    names, labels, colors = _experiments_for_diagtype(config, "omb")
+    if not names:
+        return []
+    bin_method = get_bin_method(diag_obs)
+    display_vars = display_var_names(diag_obs)
+    raw_vars = get_obs_config(diag_obs).variables
+    domains = list(resolve_domains(config).keys())
+    adjusted_start, end_time, interval = resolve_time_settings(config, diag_obs)
+    cycles = generate_cycles(adjusted_start, end_time, interval)
+    coord_label, _ = _profile_axis_meta(bin_method)
+    cfg = _comparison_graphic_cfg(config, graphic_out_dir, names, labels, colors)
+    cfg["variables"] = display_vars
+
+    jobs = []
+    for domain in domains:
+        profile_key = None
+        if not diag_obs.startswith("sfc") and (bin_method != 3 or domain == "global"):
+            profile_key = profile_key_for_domain(bin_method, domain)
+        data = {n: collect_obs_normalized_departures(diag_base_dir, n, diag_obs, cycles,
+                                                     display_vars, raw_vars, domain, profile_key)
+                for n in names}
+        if not any(data.values()):
+            continue
+        jobs.append((plot_normdep_histogram, (data, domain, cfg), {}))
+        if profile_key:
+            jobs.append((plot_normdep_profile, (data, profile_key, coord_label, cfg), {}))
+    return jobs
+
+
+def channel_correlation_data(config, diag_obs, diag_base_dir, names, domain):
+    """{exp: pooled covariances + symmetrized correlations} for one domain."""
+    from .channel_cov import correlation_from_cov
+    adjusted_start, end_time, interval = resolve_time_settings(config, diag_obs)
+    cycles = generate_cycles(adjusted_start, end_time, interval)
+    out = {}
+    for n in names:
+        d = collect_channel_covariance(diag_base_dir, n, diag_obs, cycles, domain)
+        if not d:
+            continue
+        d["R_sigma"], d["R_corr"], d["min_eig"] = correlation_from_cov(d["R"])
+        d["B_sigma"], d["B_corr"], _ = correlation_from_cov(d["B"])
+        out[n] = d
+    return out
+
+
+def generate_channel_correlation_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
+    """Inter-channel correlation figure per domain (radiances with OMA).
+    Skipped when statistics.channel_correlations or
+    plot_settings.generate_channel_correlations is off."""
+    if get_bin_method(diag_obs) != 3:
+        return []
+    if not resolve_statistics_settings(config).get("channel_correlations"):
+        return []
+    if not config["plot_settings"].get("generate_channel_correlations", True):
+        return []
+    names, labels, colors = _experiments_for_diagtype(config, "oma")
+    if not names:
+        return []
+    cfg = _comparison_graphic_cfg(config, graphic_out_dir, names, labels, colors)
+    jobs = []
+    for domain in resolve_domains(config):
+        data = channel_correlation_data(config, diag_obs, diag_base_dir, names, domain)
+        if data:
+            jobs.append((plot_channel_correlation, (data, diag_obs, domain, cfg), {}))
     return jobs
 
 
@@ -815,6 +897,8 @@ def generate_plots(config, diag_obs, graphic_out_dir, diag_base_dir):
     # applies regardless of whether this sensor gets profile/map figures.
     jobs += generate_forecast_lead_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
     jobs += generate_ensemble_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
+    jobs += generate_normdep_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
+    jobs += generate_channel_correlation_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
 
     if diag_obs.startswith("sfc"):
         return jobs

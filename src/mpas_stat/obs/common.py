@@ -168,6 +168,15 @@ DEFAULT_CONFIG = {
         # the observation error before ranking (Hamill 2001).
         "ensemble_diagnostics": True,
         "rank_histogram_perturb": True,
+        # Departures normalized by the assumed observation error (and, for
+        # ensembles, by the total spread): RMS / mean per domain and level
+        # and histograms (USER_GUIDE 5.8).
+        "normalized_departures": True,
+        # Radiances, "da" experiments with OMA: channel x channel
+        # Desroziers covariances (USER_GUIDE 5.9). correlation_channels maps
+        # a sensor to a channel list or "all"; default: its configured channels.
+        "channel_correlations": True,
+        "correlation_channels": {},
     },
 }
 
@@ -182,6 +191,8 @@ _LEGACY_STATISTICS = {
     "error_diagnostics": False,
     "ensemble_diagnostics": False,
     "rank_histogram_perturb": False,
+    "normalized_departures": False,
+    "channel_correlations": False,
 }
 
 
@@ -315,6 +326,22 @@ SPREAD_SKILL_KEYS = [
     ("SpreadSkillOMBMS", "ss_omb_ms"),
     ("SpreadSkillOMBMean", "ss_omb_mean"),
 ]
+
+# Normalized departures (statistics.normalized_departures), in the omb and
+# oma groups:  z = d / sigma_o  (d = O-B or O-A, sigma_o = the error the DA
+# used, see ObsErrorAssumed) and, for ensembles (omb only),
+# z_t = (O-B) / TotalSpread. mean(z^2) of O-A is Jo per observation.
+# Histograms use NORM_DEP_EDGES; values beyond the outer edges are counted
+# in the first / last bin.
+NORM_DEP_KEYS = [
+    ("NormDepRMS", "nd_rms"),
+    ("NormDepMean", "nd_mean"),
+    ("NormDepCount", "nd_count"),
+    ("NormDepTotalRMS", "ndt_rms"),
+    ("NormDepTotalMean", "ndt_mean"),
+    ("NormDepTotalCount", "ndt_count"),
+]
+NORM_DEP_EDGES = np.arange(-8.0, 8.0 + 1.0e-9, 0.25)
 
 ERROR_DIAG_KEYS = [
     ("ObsErrorDesroziers", "obserr_desroziers"),
@@ -638,6 +665,8 @@ __all__ = [
     "STAT_KEYS_2D",
     "ERROR_DIAG_KEYS",
     "SPREAD_BIN_EDGES",
+    "NORM_DEP_KEYS",
+    "NORM_DEP_EDGES",
     "SPREAD_SKILL_KEYS",
     "resolve_domains",
     "resolve_statistics_settings",

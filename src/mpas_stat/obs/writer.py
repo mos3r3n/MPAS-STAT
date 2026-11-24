@@ -8,8 +8,11 @@ from typing import Dict, Tuple
 import netCDF4 as nc4
 import numpy as np
 
+from .channel_cov import CHANNEL_COV_KEYS
 from .common import (
     ERROR_DIAG_KEYS,
+    NORM_DEP_EDGES,
+    NORM_DEP_KEYS,
     SPREAD_BIN_EDGES,
     SPREAD_SKILL_KEYS,
     STAT_KEYS,
@@ -85,6 +88,15 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
             edges[:] = SPREAD_BIN_EDGES
             edges.long_name = "total-spread bin edges of the SpreadSkill* variables"
 
+        norm_dep = any(f"ndhist_{d}" in results for d in diagtypes)
+        if norm_dep:
+            ds.createDimension("nNormDepBins", len(NORM_DEP_EDGES) - 1)
+            ds.createDimension("nNormDepBinEdges", len(NORM_DEP_EDGES))
+            nde = ds.createVariable("NormDepBinEdges", "f8", ("nNormDepBinEdges",))
+            nde[:] = NORM_DEP_EDGES
+            nde.long_name = ("bin edges of NormDepHist / NormDepTotalHist (values beyond "
+                             "the outer edges are counted in the end bins)")
+
         if bin_method == 3:
             profile_entries = ([("lat_bin_profile", global_idx)]
                                if global_idx is not None else [])
@@ -104,13 +116,19 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
                 d0 = var_grp.createGroup("0D")
                 for idom, domain in enumerate(domains):
                     region_grp = d0.createGroup(domain)
-                    for stat_disp, prefix in STAT_KEYS + ERROR_DIAG_KEYS:
+                    for stat_disp, prefix in STAT_KEYS + ERROR_DIAG_KEYS + NORM_DEP_KEYS:
                         key = f"{prefix}_{diagtype}"
-                        if key not in results:
+                        if key not in results or (prefix.startswith("ndt") and n_member <= 1):
                             continue
                         val = results[key][(iexp, idom) + time_idx + (iv,)]
                         var_out = region_grp.createVariable(stat_disp, "f4", ())
                         var_out[:] = np.float32(val)
+                    for name, key in (("NormDepHist", "ndhist"), ("NormDepTotalHist", "ndthist")):
+                        k = f"{key}_{diagtype}"
+                        if norm_dep and k in results and (
+                                key == "ndhist" or n_member > 1):
+                            v = region_grp.createVariable(name, "f8", ("nNormDepBins",))
+                            v[:] = results[k][(iexp, idom) + time_idx + (iv,)]
                     if ens_diag and diagtype == "omb":
                         hist = region_grp.createVariable("RankHistogram", "f8", ("nRank",))
                         hist[:] = results["rank_omb"][(iexp, idom) + time_idx + (iv,)][:n_rank]
@@ -123,9 +141,9 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
                 d1 = var_grp.createGroup("1D")
                 for pkey, idom in profile_entries:
                     prof_grp = d1.createGroup(pkey)
-                    for stat_disp, prefix in STAT_KEYS + ERROR_DIAG_KEYS:
+                    for stat_disp, prefix in STAT_KEYS + ERROR_DIAG_KEYS + NORM_DEP_KEYS:
                         key = f"{prefix}_{diagtype}_bin"
-                        if key not in results:
+                        if key not in results or (prefix.startswith("ndt") and n_member <= 1):
                             continue
                         arr = results[key][(iexp, idom) + time_idx + (slice(None), iv)]
                         var_out = prof_grp.createVariable(stat_disp, "f4", ("nLevels",))
@@ -162,6 +180,25 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
                             stat_disp, "f4", ("nLevels", "nLatBins2D")
                         )
                         var_out[:] = arr.astype(np.float32)
+
+        # ---- channel x channel covariances (radiances, see obs.channel_cov) ----
+        if "chcov_n_omb" in results and "omb" in diagtypes:
+            counts = results["chcov_n_omb"][(iexp, slice(None)) + time_idx]
+            if np.any(counts > 0):
+                chans = np.asarray(results["covariance_channels"], dtype=np.int32)
+                cg = ds.createGroup("channel_covariance")
+                cg.createDimension("nChannels", chans.size)
+                cv = cg.createVariable("Channels", "i4", ("nChannels",))
+                cv[:] = chans
+                cg.description = ("Desroziers channel covariances from OMB/OMA pairs: "
+                                  "ObsErrorCovDesroziers_ij = mean((O-A)_i (O-B)_j), "
+                                  "BkgErrorCovDesroziers_ij = mean((A-B)_i (O-B)_j), "
+                                  "OMBCov_ij = mean((O-B)_i (O-B)_j); PairCount = obs used")
+                for idom, domain in enumerate(domains):
+                    dg = cg.createGroup(domain)
+                    for name, prefix in CHANNEL_COV_KEYS:
+                        v = dg.createVariable(name, "f8", ("nChannels", "nChannels"))
+                        v[:] = results[f"{prefix}_omb"][(iexp, idom) + time_idx]
 
 
 def _experiments_to_write(config: Dict):

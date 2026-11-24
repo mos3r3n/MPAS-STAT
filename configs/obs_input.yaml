@@ -70,3 +70,6 @@ statistics:
   spread_finite_ensemble_correction: true
   error_diagnostics: true   # Desroziers sigma_o / sigma_b and assumed obs error (OMB+OMA runs)
   ensemble_diagnostics: true # rank histograms and spread-skill (n_member > 1)
+  normalized_departures: true # departures / assumed obs error (and / total spread)
+  channel_correlations: true  # radiances: channel x channel Desroziers covariances
+  # correlation_channels: {amsua_n19: all}   # default: the sensor's configured channels

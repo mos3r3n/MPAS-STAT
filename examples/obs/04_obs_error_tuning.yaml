@@ -15,6 +15,7 @@
 #   <diag_dir>/<exp>/VerifyOBS/ObsErrorEstimates/desroziers_<sensor>_<cycles>.csv
 #   <diag_dir>/<exp>/VerifyOBS/ObsErrorEstimates/desroziers_<sensor>_<cycles>.yaml
 #   <graphic_dir>/<sensor>/error_consistency_1d/   (ratio < 1: error too large)
+#   <graphic_dir>/<sensor>/normalized_departure/   (tails beyond the Gaussian: QC)
 # Iterate: apply, re-run the DA, diagnose again. docs/USER_GUIDE.md section 5.6.
 # =============================================================================
 
@@ -47,6 +48,7 @@ plot_settings:
   generate_time_level_2d: false
   generate_lat_vert_2d: false
   generate_error_consistency: true
+  generate_normalized_departures: true
   write_error_tables: true
   error_table_min_count: 500            # levels with fewer obs are left out of the filter
   scorecard: false
@@ -61,3 +63,5 @@ statistics:
   qc_pass_flags: [0, 19]
   common_sample: true
   error_diagnostics: true
+  normalized_departures: true           # bias and tails in units of the assumed error
+  channel_correlations: true            # radiances: desroziers_R_* correlation tables

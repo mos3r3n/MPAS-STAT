@@ -13,6 +13,7 @@
 #   <sensor>/rank_histogram/rank_histogram_<profile>_<exp>.png   by level
 #   <sensor>/spread_skill/spread_skill_<domain>.png         above 1:1 = too little spread
 #   <sensor>/error_consistency_1d/   TotalSpread / RMS(OMB) (dashed, bottom row)
+#   <sensor>/normalized_departure/   (O-B) / total spread: RMS 1, Gaussian tails
 # docs/USER_GUIDE.md sections 5.3 and 5.7 explain the diagnostics.
 # =============================================================================
 
@@ -63,4 +64,5 @@ statistics:
   spread_ddof: 1                        # unbiased member variance
   spread_finite_ensemble_correction: true   # x (N+1)/N, comparable with RMS(OMB)
   ensemble_diagnostics: true
+  normalized_departures: true           # (O-B) / total spread: RMS should be 1
   rank_histogram_perturb: true          # add obs-error noise to members before ranking
