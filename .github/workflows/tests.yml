@@ -1,0 +1,47 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]
+    env:
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[dev]" pytest
+
+      - name: Lint (pyflakes)
+        run: python -m pyflakes src tests
+
+      - name: Unit tests and example configs
+        run: python -m pytest -q tests
+
+      - name: Command-line entry points
+        run: |
+          for cmd in mpas-stat-model mpas-stat-graphics mpas-stat-obs mpas-stat-obs-plot \
+                     mpas-stat-obs-errors mpas-stat-radar mpas-stat-radar-plot; do
+            $cmd --help > /dev/null
+          done

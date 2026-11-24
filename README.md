@@ -1,5 +1,7 @@
 # MPAS-STAT
 
+[![tests](https://github.com/mos3r3n/MPAS-STAT/actions/workflows/tests.yml/badge.svg)](https://github.com/mos3r3n/MPAS-STAT/actions/workflows/tests.yml)
+
 Verification toolkit for regional **MPAS–JEDI** forecasts and analyses.
 
 MPAS-STAT provides two verification pipelines that share one graphics
@@ -211,8 +213,14 @@ limitations — is in [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
 ## Testing
 
 ```bash
-python -m unittest discover -s tests -v
+python -m pytest -q tests                 # or: python -m unittest discover -s tests
+python -m pyflakes src tests              # lint
 ```
+
+GitHub Actions runs both on every pull request and push to `main`
+(Python 3.9 and 3.12, `.github/workflows/tests.yml`), and also checks that
+every command-line entry point starts and that every config in `examples/`
+loads (`tests/test_examples.py`).
 
 The tests insert `src/` on `sys.path`, so they run from the repository root
 without installing. They cover bin-center/edge consistency, domain masking
