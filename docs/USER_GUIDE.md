@@ -111,6 +111,7 @@ temperature (before 2026-11, `Tv` mistakenly returned potential temperature).
 | `plot_types` | Which figures to generate — see §1.5 |
 | `forecast.*`, `scorecard.*`, `level_slices` | Extended-forecast / scorecard / 2-D-slice-specific settings |
 | `time_aggregation` | How cycles are combined: `pooled` (default) or `mean` — §5.2 |
+| `ci_style` | Bootstrap confidence intervals on line/profile plots: `shade` (coloured band, default), `errorbar`, or `none`. `ci_alpha` sets the band opacity. (Older `profile_ci_style` / `profile_errorbar: false` still work.) |
 
 ### 1.5 Available `plot_types` (model-space)
 
@@ -510,7 +511,7 @@ forecast:
 > package's own `plot_lat_lon_2d`/`plot_time_level_2d`/`plot_lat_vert_2d`
 > convention exactly: `experiments.names[0]` draws as the absolute/
 > full-state reference, and every other configured experiment draws as a
-> bootstrap `%` reduction vs. it (for whichever statistics are listed in
+> bootstrap `%` difference `100*(exp-ref)/ref` from it (for whichever statistics are listed in
 > `comparison_relative_reduction_statistics` -- default `[RMS, STD]`),
 > with significant grid cells marked (bootstrap CI excludes zero, same
 > `add_significance` convention used throughout). This is the standard
@@ -591,7 +592,10 @@ statistics:
   time_aggregation: pooled  # or "mean"
 ```
 
-See §5 for what each setting does. Domain boxes (`domains`, and
+See §5 for what each setting does. `plot_settings.ci_style` (`shade`,
+`errorbar` or `none`) chooses how confidence intervals are drawn on the
+obs-space line and profile plots, as `ci_style` does for model space.
+Domain boxes (`domains`, and
 `plot_settings.latlon_domain`) may cross the dateline: write them as
 `[lat_min, lat_max, 170, -170]` or `[lat_min, lat_max, 170, 190]`.
 
@@ -603,7 +607,7 @@ See §5 for what each setting does. Domain boxes (`domains`, and
 | **RMS reduction (%) time series** | `plot_time_series_reduction_0d` | OMB/OMA only ("da"-typed experiments with an OMA). The SAME per-cycle RMS numbers as the time series above, plotted as a single derived `100*(RMS_omb-RMS_oma)/RMS_omb` line per experiment instead of two absolute ones — positive means the analysis improved on the background. One figure per domain, in its own `time_series_diff_0d/` folder (`time_series_RMS_reduction_pct_<region>.png`). No bootstrap significance (a 0-D time series has only the already-aggregated statistic per cycle, not per-observation samples) — see the function's own docstring. |
 | Vertical/latitude binned profile | `plot_profiles_1d` | OMB/OMA only. Pressure bins (conventional), height bins (GNSS-RO/radar), or latitude bins (radiances) — whichever applies to that sensor |
 | **RMS reduction (%) profile** | `plot_profile_reduction_1d` | OMB/OMA only. The profile counterpart of the RMS reduction time series above — `100*(RMS_omb-RMS_oma)/RMS_omb` vs. level, one line per experiment, in its own `profile_reduction_1d/` folder (`profile_<profile_key>_RMS_reduction_pct.png`). Also no bootstrap significance, for the same reason. |
-| Lat-lon gridded map | `plot_lat_lon_2d` | OMB/OMA only, as two separate sets of figures. Computed over `plot_settings.latlon_domain`'s box (default: globally; not per `apply_domains`). Real-experiment comparison convention (reference + % reduction) — see the callout in §2.3 |
+| Lat-lon gridded map | `plot_lat_lon_2d` | OMB/OMA only, as two separate sets of figures. Computed over `plot_settings.latlon_domain`'s box (default: globally; not per `apply_domains`). Real-experiment comparison convention (reference + % difference) — see the callout in §2.3 |
 | Lev-time (cycle x level) Hovmoller | `plot_time_level_2d` | OMB/OMA only, as two separate sets of figures, one per (domain, statistic). Reuses the existing 1D profile data, cycle-resolved. Real-experiment comparison convention, no bootstrap (each column is one cycle) — see the callout in §2.3 |
 | Lev-lat (latitude x level) cross-section | `plot_lat_vert_2d` | OMB/OMA only, as two separate sets of figures. Domain-independent, like the lat-lon map; skipped for radiances. Real-experiment comparison convention with bootstrap significance — see the callout in §2.3 |
 | **Forecast skill** (statistic vs. forecast lead time) | `plot_forecast_lead_0d` | **OMF only** (`hofx_forecast` experiments). Domain-averaged, bootstrap-aggregated over initialization cycles at each lead hour — the exact function the model-space package uses for its own extended-forecast skill plots. One figure per (domain, statistic); non-reference experiments are bootstrap-tested against `experiments.names[0]` and significant lead times get a hollow-circle marker, same convention as `plot_profile_diff_1d`. |
@@ -989,9 +993,14 @@ rather than duplicate it:
   products, which draw OMB and OMA as two absolute-valued lines/panels on
   the same figure. The 2-D comparison products (lat-lon map, lev-lat,
   lev-time) instead use `comparison_relative_reduction_statistics` and draw
-  non-reference experiments as a bootstrap percent reduction vs. the first
-  experiment. All percent-reduction/difference figures use the same sign
-  convention: **positive = improvement, negative = degradation**.
+  non-reference experiments as a bootstrap percent difference
+  `100*(exp-ref)/ref` from the first experiment. Every experiment-vs-control
+  figure (2-D comparison panels, `profile_diff_1d`,
+  `forecast_lead_diff_0d`, `forecast_scorecard`) uses this sign:
+  **negative = lower RMS/STD than the control = improvement**, drawn with
+  an upward triangle (▲) and in blue; positive = degradation (▼, red). The
+  OMB→OMA "RMS reduction (%)" figures keep `100*(OMB-OMA)/OMB`, positive =
+  the analysis improved on the background, as their labels say.
 - Obs-space profiles (1D) and the lev-time Hovmoller are plain time
   averages / cycle-resolved values — no bootstrap confidence-interval
   shading (the model side's `profile_diff_1d` adds that; obs-space

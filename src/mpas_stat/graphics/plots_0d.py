@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from ..core.bootstrap import get_bootstrap_settings
-from ..core.pooling import entry_reduction_ci, entry_value
+from ..core.pooling import entry_difference_ci, entry_reduction_ci, entry_value
 from .axes import _set_compact_time_axis
 from .style import (
     _ensure_panel_ticks,
@@ -17,6 +17,7 @@ from .style import (
     _title_with_panel,
     apply_pub_style,
     auto_layout,
+    draw_ci,
     get_exp_plot_settings,
     is_relative_stat,
     significant_from_ci,
@@ -209,8 +210,6 @@ def plot_forecast_lead_0d(ForecastLead, stat_name, cfg):
     var_names   = cfg["variables"]
     region_name = cfg.get("region", "global")
     out_dir     = _section_out_dir(cfg, "forecast_lead_0d")
-    ci_style    = str(cfg.get("profile_ci_style",
-                              cfg.get("plot_style", {}).get("profile_ci_style", "shade"))).lower()
     boot = get_bootstrap_settings(cfg)
 
     exp_names, exp_labels, colors, linestyles = get_exp_plot_settings(cfg)
@@ -254,13 +253,8 @@ def plot_forecast_lead_0d(ForecastLead, stat_name, cfg):
                     linestyle=linestyles[iexp % len(linestyles)])
 
             if "ci_low" in entry and "ci_high" in entry:
-                if ci_style == "shade":
-                    ax.fill_between(x, entry["ci_low"], entry["ci_high"],
-                                    color=color, alpha=0.15, linewidth=0)
-                elif ci_style == "errorbar":
-                    yerr = np.vstack([y - entry["ci_low"], entry["ci_high"] - y])
-                    ax.errorbar(x, y, yerr=yerr, color=color, fmt="none",
-                               capsize=2, alpha=0.6)
+                draw_ci(ax, x, y, entry["ci_low"], entry["ci_high"], color, cfg,
+                        alpha_default=0.15)
 
             # --- Significance vs. the reference/control experiment ---
             # Re-uses the same per-cycle samples matrix (n_cycles x n_leads)
@@ -323,8 +317,9 @@ def plot_forecast_lead_diff_0d(ForecastLead, stat_name, cfg):
 
     Mirrors plot_profile_diff_1d, but the independent axis is forecast lead
     time (from collect_forecast_lead_0d's per-cycle samples at each lead)
-    instead of a vertical coordinate. Positive values indicate improvement
-    over the reference; significant lead times (bootstrap CI vs. the
+    instead of a vertical coordinate. Values are the percent difference
+    100 * (exp - ref) / ref: negative = lower than the reference (an
+    improvement for RMS/STD); significant lead times (bootstrap CI vs. the
     reference excludes zero) are marked with a dot, same convention as
     plot_profile_diff_1d.
     """
@@ -337,8 +332,6 @@ def plot_forecast_lead_diff_0d(ForecastLead, stat_name, cfg):
 
     exp_names, exp_labels, colors, linestyles = get_exp_plot_settings(cfg)
     boot     = get_bootstrap_settings(cfg)
-    ci_style = str(cfg.get("profile_ci_style",
-                          cfg.get("plot_style", {}).get("profile_ci_style", "shade"))).lower()
     ref_exp  = exp_names[0]
 
     nvars, (nrows, ncols) = len(var_names), auto_layout(len(var_names))
@@ -362,7 +355,7 @@ def plot_forecast_lead_diff_0d(ForecastLead, stat_name, cfg):
             if exp_entry is None:
                 continue
 
-            red, ci_low, ci_high = entry_reduction_ci(ref_entry, exp_entry, boot)
+            red, ci_low, ci_high = entry_difference_ci(ref_entry, exp_entry, boot)
             threshold = _relative_ref_threshold(var_name, cfg)
             ref_mean  = entry_value(ref_entry)
             small_ref = ~np.isfinite(ref_mean) | (np.abs(ref_mean) < threshold)
@@ -376,13 +369,7 @@ def plot_forecast_lead_diff_0d(ForecastLead, stat_name, cfg):
 
             ax.plot(x, red, color=color, linestyle=ls, marker="o",
                     label=exp_labels[iexp])
-            if ci_style in ("shade", "shading", "fill"):
-                ax.fill_between(x, ci_low, ci_high, color=color,
-                                alpha=cfg.get("ci_alpha", 0.14), linewidth=0)
-            elif ci_style in ("bar", "bars", "errorbar"):
-                yerr = np.vstack([red - ci_low, ci_high - red])
-                ax.errorbar(x, red, yerr=yerr, fmt="none",
-                           ecolor=color, elinewidth=0.8, capsize=2, alpha=0.75)
+            draw_ci(ax, x, red, ci_low, ci_high, color, cfg, alpha_default=0.14)
             if boot["plot_significance"]:
                 ax.scatter(x[significant], red[significant],
                           color=color, s=14, marker="o",

@@ -6,6 +6,10 @@ paths:
 
 figure_format: "pdf"
 
+# Bootstrap confidence intervals on line and profile plots:
+# "shade" (coloured band), "errorbar" (error bars) or "none".
+ci_style: shade
+
 # Render figures in parallel across this many worker processes (each job is
 # one figure's collect+plot step -- see run_graphics() in
 # src/mpas_stat/graphics/driver.py). 1 = sequential (default, unchanged
@@ -89,8 +93,9 @@ plot_types:
   # - forecast_lat_lon_2d
   # - forecast_scorecard
   # "forecast_lead_diff_0d" is forecast_lead_0d's percent-difference
-  # counterpart: same x-axis (forecast lead time), but y-axis is % RMS (or
-  # other relative_reduction_statistics) reduction vs. experiments.names[0],
+  # counterpart: same x-axis (forecast lead time), but y-axis is the % RMS (or
+  # other relative_reduction_statistics) difference 100*(exp-ref)/ref from
+  # experiments.names[0] (negative = improvement),
   # exactly like profile_diff_1d relates to profiles_1d. Uncomment to enable:
   # - forecast_lead_diff_0d
 

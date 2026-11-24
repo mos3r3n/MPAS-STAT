@@ -82,8 +82,10 @@ def plot_time_level_2d(TimeLev, profile_key, stat_name, cfg):
                 threshold = _relative_ref_threshold(var_name, cfg)
                 valid = (np.isfinite(ref_data) & np.isfinite(data)
                          & (np.abs(ref_data) >= threshold))
+                # Percent difference 100*(exp-ref)/ref: negative = lower
+                # than the reference (improvement for RMS/STD).
                 plot_data[valid] = (100.0
-                                    * (ref_data[valid] - data[valid])
+                                    * (data[valid] - ref_data[valid])
                                     / ref_data[valid])
             else:
                 plot_data = data

@@ -313,6 +313,82 @@ class TestObsCollectorsPooled(unittest.TestCase):
                         self.assertEqual(out["pool"]["w"].shape, out["samples"].shape)
 
 
+class TestComparisonMarkers(unittest.TestCase):
+    """Comparison figures plot 100*(exp-ref)/ref; lower RMS than the
+    reference (negative difference) gets the upward triangle."""
+
+    def _markers(self, plot_fn, *args):
+        import matplotlib
+        matplotlib.use("Agg")
+        from unittest import mock
+        import matplotlib.axes
+        calls = []
+        real = matplotlib.axes.Axes.scatter
+
+        def spy(ax, *a, **k):
+            calls.append((k.get("marker"), np.asarray(a[1] if len(a) > 1 else []).ravel()))
+            return real(ax, *a, **k)
+        with mock.patch.object(matplotlib.axes.Axes, "scatter", spy), \
+                mock.patch("mpas_stat.graphics.scorecard._save_fig"), \
+                mock.patch("mpas_stat.graphics.panels.plt", create=True):
+            plot_fn(*args)
+        return [m for m, _ in calls if m in ("^", "v")]
+
+    def test_scorecard_triangle_follows_improvement(self):
+        from mpas_stat.graphics.scorecard import plot_forecast_scorecard
+        better = {"leads": np.array([6.0]), "samples": np.full((4, 1), 1.0)}
+        worse = {"leads": np.array([6.0]), "samples": np.full((4, 1), 2.0)}
+        cfg = {"experiments": {"names": ["ref", "exp"], "labels": ["Ref", "Exp"]},
+               "bootstrap": {"n_boot": 20}}
+        # exp has LOWER RMS than ref -> improvement -> upward triangle
+        self.assertEqual(self._markers(plot_forecast_scorecard,
+                                       {"ref": [worse], "exp": [better]}, ["U 500"], "rms", cfg), ["^"])
+        self.assertEqual(self._markers(plot_forecast_scorecard,
+                                       {"ref": [better], "exp": [worse]}, ["U 500"], "rms", cfg), ["v"])
+
+    def test_difference_helper(self):
+        from mpas_stat.core.pooling import entry_difference_ci
+        ref = {"samples": np.full((3, 2), 2.0)}
+        exp = {"samples": np.array([[1.0, 3.0]] * 3)}
+        diff, lo, hi = entry_difference_ci(ref, exp, {"n_boot": 20, "ci": 95, "seed": 0})
+        np.testing.assert_allclose(diff, [-50.0, 50.0])
+        self.assertTrue(np.all(lo <= diff) and np.all(diff <= hi))
+
+
+class TestConfidenceIntervalStyle(unittest.TestCase):
+    def test_get_ci_style(self):
+        from mpas_stat.graphics.style import get_ci_style
+        self.assertEqual(get_ci_style({}), "shade")
+        self.assertEqual(get_ci_style({"ci_style": "errorbar"}), "errorbar")
+        self.assertEqual(get_ci_style({"ci_style": "bars"}), "errorbar")
+        self.assertEqual(get_ci_style({"plot_style": {"ci_style": "none"}}), "none")
+        self.assertEqual(get_ci_style({"profile_ci_style": "errorbar"}), "errorbar")  # older key
+        self.assertEqual(get_ci_style({"profile_errorbar": False}), "none")
+        with self.assertRaises(ValueError):
+            get_ci_style({"ci_style": "dots"})
+
+    def test_draw_ci(self):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from mpas_stat.graphics.style import draw_ci
+        x, y = np.arange(3.0), np.array([1.0, 2.0, 3.0])
+        for style, horizontal in (("shade", False), ("shade", True), ("errorbar", False),
+                                  ("errorbar", True), ("none", False)):
+            fig, ax = plt.subplots()
+            draw_ci(ax, x, y, y - 0.5, y + 0.5, "blue", {"ci_style": style}, horizontal=horizontal)
+            self.assertEqual(len(ax.collections) > 0, style != "none", style)
+            if style == "errorbar":
+                self.assertEqual(len(ax.containers), 1)
+            plt.close(fig)
+
+    def test_obs_cfg_passes_ci_style(self):
+        from mpas_stat.obs.experiments import _ci_display_settings
+        self.assertEqual(_ci_display_settings({"plot_settings": {"ci_style": "errorbar", "ci_alpha": 0.3}}),
+                         {"ci_style": "errorbar", "ci_alpha": 0.3})
+        self.assertEqual(_ci_display_settings({"plot_settings": {}}), {})
+
+
 class TestDatelineDomains(unittest.TestCase):
     def test_mask_crosses_dateline(self):
         lon = np.array([175.0, -175.0, 0.0, -170.0])

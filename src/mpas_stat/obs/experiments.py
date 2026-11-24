@@ -136,6 +136,7 @@ def _comparison_graphic_cfg(config, out_dir, names, labels, colors):
         "max_time_ticks": config["plot_settings"].get("max_time_ticks", 12),
         "relative_reduction_statistics": comparison_stats,
         "bootstrap": config.get("bootstrap", {}),
+        **_ci_display_settings(config),
     }
 
 
@@ -148,6 +149,13 @@ def _profile_axis_meta(bin_method):
     if bin_method == 2:
         return "Height (km)", False
     return "Latitude", False
+
+
+def _ci_display_settings(config):
+    """plot_settings.ci_style / ci_alpha, passed to the shared plot functions
+    (confidence intervals as "shade", "errorbar" or "none")."""
+    ps = config.get("plot_settings", {})
+    return {k: ps[k] for k in ("ci_style", "ci_alpha") if k in ps}
 
 
 def _base_graphic_cfg(config, out_dir):
@@ -169,4 +177,5 @@ def _base_graphic_cfg(config, out_dir):
         # disable MPAS-STAT's relative/percent-reduction plotting mode.
         "relative_reduction_statistics": [],
     }
+    cfg.update(_ci_display_settings(config))
     return cfg, index_map

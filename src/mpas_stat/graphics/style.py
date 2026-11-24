@@ -190,3 +190,61 @@ def _section_out_dir(cfg, section_name):
 
 # Call once on import so every function inherits the style.
 apply_pub_style()
+
+
+# ---------------------------------------------------------------------------
+# Confidence-interval display
+# ---------------------------------------------------------------------------
+_CI_STYLE_ALIASES = {
+    "shade": "shade", "shading": "shade", "fill": "shade",
+    "errorbar": "errorbar", "errorbars": "errorbar", "bar": "errorbar", "bars": "errorbar",
+    "none": "none", "off": "none", "false": "none",
+}
+
+
+def get_ci_style(cfg):
+    """How bootstrap confidence intervals are drawn on line/profile plots:
+    "shade" (coloured band, default), "errorbar" (error bars) or "none".
+
+    Read from cfg["ci_style"], else cfg["plot_style"]["ci_style"], else the
+    older profile_ci_style keys; profile_errorbar: false also means "none".
+    """
+    style = cfg.get("plot_style", {}) or {}
+    raw = cfg.get("ci_style", style.get("ci_style",
+                  cfg.get("profile_ci_style", style.get("profile_ci_style", "shade"))))
+    if raw is False or raw is None:
+        raw = "none"
+    if cfg.get("profile_errorbar", True) is False:
+        raw = "none"
+    key = str(raw).strip().lower()
+    if key not in _CI_STYLE_ALIASES:
+        raise ValueError(f"ci_style must be 'shade', 'errorbar' or 'none', got {raw!r}")
+    return _CI_STYLE_ALIASES[key]
+
+
+def draw_ci(ax, coord, value, ci_low, ci_high, color, cfg, horizontal=False,
+            alpha_default=0.15, zorder=1):
+    """Draw a confidence interval around a line in the configured ci_style.
+
+    ``horizontal=True`` is for vertical profiles, where the statistic is on
+    the x axis and ``coord`` on the y axis.
+    """
+    style = get_ci_style(cfg)
+    if style == "none" or ci_low is None or ci_high is None:
+        return
+    coord = np.asarray(coord)
+    value = np.asarray(value, dtype=float)
+    ci_low = np.asarray(ci_low, dtype=float)
+    ci_high = np.asarray(ci_high, dtype=float)
+    if style == "shade":
+        fill = ax.fill_betweenx if horizontal else ax.fill_between
+        fill(coord, ci_low, ci_high, color=color,
+             alpha=cfg.get("ci_alpha", alpha_default), linewidth=0, zorder=zorder)
+    else:
+        err = np.vstack([value - ci_low, ci_high - value])
+        kw = dict(fmt="none", ecolor=color, elinewidth=cfg.get("ci_errorbar_linewidth", 0.8),
+                  capsize=cfg.get("ci_errorbar_capsize", 2), alpha=0.75, zorder=zorder + 1)
+        if horizontal:
+            ax.errorbar(value, coord, xerr=err, **kw)
+        else:
+            ax.errorbar(coord, value, yerr=err, **kw)

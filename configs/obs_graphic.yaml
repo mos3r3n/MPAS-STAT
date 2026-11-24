@@ -57,6 +57,7 @@ plot_settings:
   latlon_lat_bin_width: 10.0
   latlon_lon_bin_width: 10.0
   comparison_relative_reduction_statistics: [RMS, STD]
+  ci_style: shade           # confidence intervals: shade | errorbar | none
   generate_time_level_2d: true
   generate_lat_vert_2d: true
 
