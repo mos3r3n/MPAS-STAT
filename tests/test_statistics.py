@@ -389,6 +389,316 @@ class TestConfidenceIntervalStyle(unittest.TestCase):
         self.assertEqual(_ci_display_settings({"plot_settings": {}}), {})
 
 
+class TestColourScales(unittest.TestCase):
+    def test_nice_symmetric_levels(self):
+        from mpas_stat.graphics.colour import nice_levels
+        lv = nice_levels(-23.7, 23.7, 20, diverging=True)
+        self.assertAlmostEqual(lv[0], -lv[-1])
+        self.assertTrue(np.any(np.isclose(lv, 0.0)))          # 0 on a boundary
+        self.assertGreaterEqual(lv[-1], 23.7)                 # covers the data
+        self.assertLessEqual(lv[-1], 30.0)                    # ...with a clean limit
+        steps = np.diff(lv)
+        np.testing.assert_allclose(steps, steps[0])
+        seq = nice_levels(0.37, 1.42, 16, diverging=False)
+        self.assertLessEqual(seq[0], 0.37)
+        self.assertGreaterEqual(seq[-1], 1.42)
+
+    def test_colour_scale_discrete_shared_and_continuous(self):
+        import matplotlib.colors as mcolors
+        from mpas_stat.graphics.colour import colour_scale
+        a, b = np.array([[-3.0, 1.0]]), np.array([[12.0, -4.0]])
+        cmap, norm, levels = colour_scale("RdBu_r", None, None, {}, True, extend="both",
+                                          data_arrays=[a, b])
+        self.assertIsInstance(norm, mcolors.BoundaryNorm)
+        self.assertGreaterEqual(levels[-1], 12.0)   # shared: covers both panels
+        _, norm2, levels2 = colour_scale("RdBu_r", None, None, {"colorbar": {"discrete": False}},
+                                         True, data_arrays=[a])
+        self.assertIsNone(levels2)
+        self.assertNotIsInstance(norm2, mcolors.BoundaryNorm)
+        _, _, fixed = colour_scale("RdBu_r", -10, 10, {}, True, data_arrays=[b])
+        self.assertEqual((fixed[0], fixed[-1]), (-10.0, 10.0))  # explicit limits win
+
+    def test_colorbar_ticks_keep_zero(self):
+        from mpas_stat.graphics.colour import colorbar_ticks
+        ticks = colorbar_ticks(np.linspace(-20, 20, 21), max_ticks=9)
+        self.assertIn(0.0, ticks)
+        self.assertLessEqual(len(ticks), 11)
+
+    def test_cvd_safe_palette_default(self):
+        from mpas_stat.graphics.colour import CVD_SAFE_PALETTE
+        from mpas_stat.graphics.style import get_exp_plot_settings
+        from mpas_stat.obs.experiments import _palette
+        _, _, colors, _ = get_exp_plot_settings({"experiments": {"names": ["a", "b"]}})
+        self.assertEqual(colors[:2], CVD_SAFE_PALETTE[:2])
+        self.assertEqual(_palette({"plot_settings": {"palette": ["k", "r"]}}), ["k", "r"])
+        self.assertEqual(_palette({}), CVD_SAFE_PALETTE)
+
+
+class TestErrorConsistencyDiagnostics(unittest.TestCase):
+    """Desroziers estimates recover KNOWN observation/background errors for an
+    optimal analysis, also when OMA comes from a separate, reordered file,
+    and the ensemble consistency ratio is ~1 for a consistent ensemble."""
+
+    SO, SB, N = 2.0, 1.5, 6000
+
+    def _write(self, tmp, nmember=1, assumed=1.5):
+        rng = np.random.default_rng(3)
+        n, so, sb = self.N, self.SO, self.SB
+        lat, lon, p = rng.uniform(-60, 60, n), rng.uniform(0, 360, n), rng.uniform(2e4, 1e5, n)
+        xb = sb * rng.standard_normal(n)
+        y = so * rng.standard_normal(n)
+        xa = xb + sb**2 / (sb**2 + so**2) * (y - xb)
+        members = xb[None, :] + sb * rng.standard_normal((nmember, n))
+        members -= members.mean(0) - xb
+        db = os.path.join(tmp, "exp", "CyclingDA", "2024091306", "dbOut")
+        os.makedirs(db)
+        files = [("obsout_da_aircraft.h5", np.arange(n), ("ombg", y - xb), "EffectiveQC0")]
+        if nmember > 1:   # ensemble: OMA in a separate, REORDERED file
+            files.append(("obsout_da_aircraft_ana.h5", rng.permutation(n), ("oman", y - xa), "EffectiveQC2"))
+        for fname, order, (grp, val), qc in files:
+            with h5py.File(os.path.join(db, fname), "w") as f:
+                md = f.create_group("MetaData")
+                md["latitude"], md["longitude"], md["pressure"] = lat[order], lon[order], p[order]
+                for v in ("windEastward", "windNorthward", "airTemperature"):
+                    f.require_group("ObsValue")[v] = y[order]
+                    f.require_group(grp)[v] = val[order]
+                    f.require_group(qc)[v] = np.zeros(n, "i4")
+                    f.require_group("ObsError")[v] = np.full(n, so)
+                    f.require_group("EffectiveError2")[v] = np.full(n, assumed * so)
+                    if nmember == 1:
+                        f.require_group("oman")[v] = (y - xa)[order]
+                        f.require_group("EffectiveQC2")[v] = np.zeros(n, "i4")
+                    for k in range(nmember if nmember > 1 else 0):
+                        f.require_group(f"hofx0_{k+1}")[v] = members[k][order]
+        return db
+
+    def _run(self, nmember, method="weighted"):
+        from mpas_stat.obs.common import load_config
+        from mpas_stat.obs.process import process_experiment
+        from mpas_stat.obs.writer import write_obs_diag_files
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp)
+        self._write(tmp, nmember)
+        cfg_path = os.path.join(tmp, "cfg.yaml")
+        Path(cfg_path).write_text(
+            f"paths: {{da_dir: {tmp}, hofx_dir: {tmp}, diag_dir: {tmp}/diag, graphic_dir: {tmp}/fig}}\n"
+            f"experiments: {{names: [exp], types: [da], outerloop: [2], n_member: [{nmember}]}}\n"
+            "sensors: [aircraft]\ndomains: {global: [null, null, null, null]}\n"
+            "plot_settings: {apply_domains: [global], latlon_domain: global}\n"
+            "time_settings: {start_time: '2024-09-13 06:00:00', end_time: '2024-09-13 06:00:00', interval: 6}\n"
+            f"statistics: {{method: {method}}}\n")
+        config = load_config(cfg_path)
+        write_obs_diag_files(process_experiment(config, "aircraft"), config, "aircraft", f"{tmp}/diag")
+        self.config, self.diag_dir = config, f"{tmp}/diag"
+        return nc4.Dataset(f"{tmp}/diag/exp/VerifyOBS/2024091306/obsstat_aircraft.2024-09-13_06.00.00.nc")
+
+    def test_deterministic_recovers_known_errors(self):
+        with self._run(1) as ds:
+            g = ds["omb/airTemperature/0D/global"]
+            self.assertAlmostEqual(float(g["ObsErrorDesroziers"][...]), self.SO, delta=0.06)
+            self.assertAlmostEqual(float(g["BkgErrorDesroziers"][...]), self.SB, delta=0.06)
+            self.assertAlmostEqual(float(g["ObsErrorAssumed"][...]), 1.5 * self.SO, places=4)
+            self.assertNotIn("ObsErrorDesroziers", ds["oma/airTemperature/0D/global"].variables)
+
+    def test_ensemble_reordered_analysis_file_and_consistency_ratio(self):
+        with self._run(10) as ds:
+            g = ds["omb/windEastward/0D/global"]
+            self.assertAlmostEqual(float(g["ObsErrorDesroziers"][...]), self.SO, delta=0.06)
+            self.assertAlmostEqual(float(g["BkgErrorDesroziers"][...]), self.SB, delta=0.06)
+            cr = float(g["TotalSpread"][...]) / float(g["RMS"][...])
+            self.assertAlmostEqual(cr, 1.0, delta=0.05)
+
+    def test_export_tables_and_jedi_filter(self):
+        import csv
+        import yaml
+        from mpas_stat.obs.error_export import export_error_estimates
+        self._run(1).close()
+        files = export_error_estimates(self.config, "aircraft", self.diag_dir)
+        self.assertEqual(sorted(os.path.splitext(f)[1] for f in files), [".csv", ".yaml"])
+        csv_path = next(f for f in files if f.endswith(".csv"))
+        self.assertIn(os.path.join("exp", "VerifyOBS", "ObsErrorEstimates"), csv_path)
+        rows = list(csv.DictReader(open(csv_path)))
+        tot = next(r for r in rows if r["variable"] == "T" and r["level"] == "all")
+        self.assertAlmostEqual(float(tot["desroziers_obs_error"]), self.SO, delta=0.06)
+        self.assertAlmostEqual(float(tot["desroziers_to_assumed_ratio"]), 1 / 1.5, delta=0.03)
+        doc = yaml.safe_load(open(next(f for f in files if f.endswith(".yaml"))))
+        flt = doc["variables"]["T"]["jedi_filter"]
+        self.assertEqual(flt["action"]["name"], "assign error")
+        opts = flt["action"]["error function"]["options"]
+        self.assertEqual(opts["xvar"]["name"], "MetaData/pressure")
+        self.assertEqual(len(opts["xvals"]), len(opts["errors"]))
+        self.assertGreater(min(opts["xvals"]), 1000.0)          # Pa, not hPa
+        self.assertTrue(all(abs(e - self.SO) < 0.3 for e in opts["errors"]))
+
+    def test_ensemble_rank_histogram_and_spread_skill_written(self):
+        from mpas_stat.graphics.plots_ensemble import rank_histogram_summary
+        from mpas_stat.obs.collect import collect_obs_rank_histograms, collect_obs_spread_skill
+        from mpas_stat.obs.common import generate_cycles, resolve_time_settings
+        with self._run(10) as ds:
+            g = ds["omb/airTemperature/0D/global"]
+            hist = np.asarray(g["RankHistogram"][:])
+            self.assertEqual(hist.size, 11)
+            self.assertEqual(hist.sum(), float(g["Count"][...]))
+            self.assertNotIn("RankHistogram", ds["oma/airTemperature/0D/global"].variables)
+            prof = np.asarray(ds["omb/airTemperature/1D/vert_pres_profile_global/RankHistogram"][:])
+            self.assertEqual(prof.sum(), hist.sum())        # every obs falls in one level bin
+        _, outlier, delta = rank_histogram_summary(hist)
+        self.assertAlmostEqual(outlier, 1.0, delta=0.15)    # consistent ensemble: flat
+        self.assertLess(delta, 0.08)
+        start, end, step = resolve_time_settings(self.config, "aircraft")
+        cycles = generate_cycles(start, end, step)
+        args = (self.diag_dir, "exp", "aircraft", cycles, ["T"], ["airTemperature"], "global")
+        rh = collect_obs_rank_histograms(*args, profile_key="vert_pres_profile_global")
+        self.assertEqual(rh["T"]["hist"].sum(), hist.sum())
+        ss = collect_obs_spread_skill(*args, n_groups=5, min_count=10)["T"]
+        self.assertEqual(int(ss["count"].sum()), int(hist.sum()))
+        # consistent ensemble: pooled over all groups, error and spread agree
+        # (per group they need not: here the true spread is constant, so
+        # binning on the sampled spread only shows regression to the mean)
+        c = ss["count"]
+        self.assertAlmostEqual(np.sqrt(np.sum(c * ss["rms"] ** 2) / c.sum())
+                               / np.sqrt(np.sum(c * ss["total_spread"] ** 2) / c.sum()),
+                               1.0, delta=0.05)
+
+    def test_legacy_writes_no_error_diagnostics(self):
+        with self._run(1, method="legacy") as ds:
+            self.assertNotIn("ObsErrorDesroziers", ds["omb/airTemperature/0D/global"].variables)
+
+
+class TestEnsembleRank(unittest.TestCase):
+    """Rank of the observation among (perturbed) members, and the level
+    index helper used for rank histograms by level."""
+
+    def _ranks(self, spread_scale, perturb=True):
+        from mpas_stat.obs.reader import _observation_rank
+        rng = np.random.default_rng(0)
+        n, m, so, sb = 40000, 9, 1.0, 1.5
+        truth = np.zeros(n)
+        mean = truth + sb * rng.standard_normal(n)
+        y = truth + so * rng.standard_normal(n)
+        members = mean[None] + spread_scale * sb * rng.standard_normal((m, n))
+        return _observation_rank(members, y, None, np.full(n, so), perturb=perturb, seed=1)
+
+    def test_reliable_flat_underdispersive_u_shaped(self):
+        from mpas_stat.graphics.plots_ensemble import rank_histogram_summary
+        flat = np.bincount(self._ranks(1.0).astype(int), minlength=10)
+        _, out_flat, d_flat = rank_histogram_summary(flat)
+        self.assertAlmostEqual(out_flat, 1.0, delta=0.08)
+        self.assertLess(d_flat, 0.05)
+        narrow = np.bincount(self._ranks(0.5).astype(int), minlength=10)
+        _, out_narrow, _ = rank_histogram_summary(narrow)
+        self.assertGreater(out_narrow, 1.5)
+        # without the obs-error perturbation even a reliable ensemble looks U-shaped
+        raw = np.bincount(self._ranks(1.0, perturb=False).astype(int), minlength=10)
+        self.assertGreater(rank_histogram_summary(raw)[1], 1.2)
+
+    def test_missing_member_gives_nan(self):
+        from mpas_stat.obs.reader import _observation_rank
+        members = np.array([[1.0, np.nan], [2.0, 2.0]])
+        r = _observation_rank(members, np.array([1.5, 1.5]), None, None, perturb=False)
+        self.assertEqual(r[0], 1.0)
+        self.assertTrue(np.isnan(r[1]))
+
+    def test_level_bin_index_matches_calculate_stats(self):
+        from mpas_stat.obs.binning import calculate_stats, level_bin_index
+        rng = np.random.default_rng(2)
+        for method, levels, vals in (
+                (1, np.array([1000., 850., 500., 250., 100.]), rng.uniform(50, 1050, 3000)),
+                (3, np.arange(-80., 81., 10.), rng.uniform(-90, 90, 3000))):
+            idx = level_bin_index(vals, levels, method)
+            counts = calculate_stats(np.ones_like(vals), np.zeros_like(vals), vals,
+                                     levels, method)["count"][:-1]
+            np.testing.assert_array_equal(np.bincount(idx[idx >= 0], minlength=levels.size),
+                                          counts)
+
+    def test_merge_spread_bins_conserves_counts(self):
+        from mpas_stat.obs.collect import merge_spread_bins
+        count = np.array([0, 5, 100, 300, 50, 0, 10, 535])
+        m = {"x": np.arange(8.0)}
+        c, mm = merge_spread_bins(count, m, n_groups=4, min_count=1)
+        self.assertEqual(c.sum(), count.sum())
+        self.assertAlmostEqual(np.sum(c * mm["x"]), np.sum(count * m["x"]))
+
+
+class TestObsDisplaySettings(unittest.TestCase):
+    def test_plot_style_and_colorbar_reach_obs_figures(self):
+        from mpas_stat.obs.experiments import _base_graphic_cfg, _comparison_graphic_cfg
+        config = {"plot_settings": {"ci_style": "errorbar", "figure_format": "pdf",
+                                    "colorbar": {"discrete": False}},
+                  "plot_style": {"font_size": 14, "diverging_cmap": "RdYlBu_r"},
+                  "experiments": {"names": ["a", "b"], "labels": ["A", "B"],
+                                  "types": ["da", "da"], "outerloop": [2, 2],
+                                  "n_member": [1, 1]}}
+        cfg = _comparison_graphic_cfg(config, "/tmp/x", ["a", "b"], ["A", "B"], ["k", "r"])
+        self.assertEqual(cfg["plot_style"]["diverging_cmap"], "RdYlBu_r")
+        self.assertFalse(cfg["colorbar"]["discrete"])
+        self.assertEqual(cfg["ci_style"], "errorbar")
+        base, _ = _base_graphic_cfg(config, "/tmp/x")
+        self.assertEqual(base["plot_style"]["font_size"], 14)
+
+
+class TestScorecard(unittest.TestCase):
+    """The scorecard reports a significant improvement where the test
+    experiment has a smaller background error, and nothing significant
+    where the two experiments are statistically identical."""
+
+    def test_scorecard_cells(self):
+        from mpas_stat.obs.common import load_config
+        from mpas_stat.obs.process import process_experiment
+        from mpas_stat.obs.scorecard import generate_scorecards, scorecard_data, scorecard_settings
+        from mpas_stat.obs.writer import write_obs_diag_files
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, tmp)
+        rng = np.random.default_rng(1)
+        n = 3000
+        cycles = [f"2024091{3 + i // 4}{(i % 4) * 6:02d}" for i in range(8)]
+        for c in cycles:
+            crng = np.random.default_rng(int(c))
+            lat, lon = crng.uniform(-60, 60, n), crng.uniform(0, 360, n)
+            p = crng.uniform(2e4, 1e5, n)
+            for exp, scale in (("ctl", 1.0), ("tst", 0.7)):
+                db = os.path.join(tmp, exp, "CyclingDA", c, "dbOut")
+                os.makedirs(db)
+                with h5py.File(os.path.join(db, "obsout_da_aircraft.h5"), "w") as f:
+                    md = f.create_group("MetaData")
+                    md["latitude"], md["longitude"], md["pressure"] = lat, lon, p
+                    for v in ("windEastward", "windNorthward", "airTemperature"):
+                        s = scale if v == "airTemperature" else 1.0
+                        f.require_group("ombg")[v] = 2.0 * s * rng.standard_normal(n)
+                        f.require_group("oman")[v] = rng.standard_normal(n)
+                        f.require_group("ObsValue")[v] = np.zeros(n)
+                        for g in ("EffectiveQC0", "EffectiveQC2"):
+                            f.require_group(g)[v] = np.zeros(n, "i4")
+        cfg_path = os.path.join(tmp, "cfg.yaml")
+        Path(cfg_path).write_text(
+            f"paths: {{da_dir: {tmp}, hofx_dir: {tmp}, diag_dir: {tmp}, graphic_dir: {tmp}/fig}}\n"
+            "experiments: {names: [ctl, tst], labels: [Control, Test], types: [da, da], "
+            "outerloop: [2, 2], n_member: [1, 1]}\n"
+            "sensors: [aircraft]\ndomains: {global: [null, null, null, null]}\n"
+            "plot_settings: {apply_domains: [global], latlon_domain: global, "
+            "scorecard: {statistics: [RMS], min_cycles: 5}}\n"
+            "time_settings: {start_time: '2024-09-13 00:00:00', "
+            "end_time: '2024-09-14 18:00:00', interval: 6}\n"
+            "bootstrap: {n_boot: 200}\n")
+        config = load_config(cfg_path)
+        write_obs_diag_files(process_experiment(config, "aircraft"), config, "aircraft", tmp)
+        data = scorecard_data(config, tmp, "ctl", "tst", "omb", scorecard_settings(config))
+        rows = data["rows"]
+        t_all = rows.index(("aircraft", "T", "all"))
+        u_all = rows.index(("aircraft", "U", "all"))
+        self.assertAlmostEqual(data["diff"][t_all, 0], -30.0, delta=2.0)
+        self.assertLess(data["hi"][t_all, 0], 0.0)                     # significant
+        self.assertLess(abs(data["diff"][u_all, 0]), 3.0)
+        few = dict(scorecard_settings(config), min_cycles=20)        # 8 cycles only
+        data_few = scorecard_data(config, tmp, "ctl", "tst", "omb", few)
+        self.assertTrue(np.isnan(data_few["hi"]).all())                 # no markers
+        self.assertAlmostEqual(data_few["diff"][t_all, 0], data["diff"][t_all, 0])
+        self.assertGreater(sum(r[1] == "T" for r in rows), 2)          # level rows too
+        files = generate_scorecards(config, tmp)
+        self.assertTrue(any(f.endswith(".png") for f in files))
+        self.assertTrue(any(f.endswith(".csv") for f in files))
+
+
 class TestDatelineDomains(unittest.TestCase):
     def test_mask_crosses_dateline(self):
         lon = np.array([175.0, -175.0, 0.0, -170.0])

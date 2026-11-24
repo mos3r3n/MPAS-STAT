@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 
+from .colour import colorbar_ticks
 from .style import _ensure_panel_ticks
 
 
@@ -212,9 +213,12 @@ def _latlon_projection_info():
     return projection, cartopy_info
 
 
-def _nice_colorbar(fig, ax, pcm, label, cfg, relative=False):
-    """Consistent, publication-friendly colorbar formatting."""
-    cbar_cfg = cfg.get("colorbar", {})
+def _nice_colorbar(fig, ax, pcm, label, cfg, relative=False, levels=None):
+    """Consistent, publication-friendly colorbar formatting.
+
+    With discrete ``levels`` (see graphics.colour), the bar shows one block
+    per level and ticks on a subset of the level boundaries."""
+    cbar_cfg = cfg.get("colorbar", {}) or {}
     cbar = fig.colorbar(
         pcm, ax=ax,
         shrink=cbar_cfg.get("shrink", 0.86),
@@ -224,10 +228,14 @@ def _nice_colorbar(fig, ax, pcm, label, cfg, relative=False):
     )
     cbar.set_label(label)
     cbar.ax.tick_params(labelsize=plt.rcParams["ytick.labelsize"], width=0.8, length=3)
-    try:
-        cbar.ax.yaxis.set_minor_locator(mticker.AutoMinorLocator())
-    except Exception:
-        pass
+    if levels is not None:
+        cbar.set_ticks(colorbar_ticks(levels, max_ticks=int(cbar_cfg.get("max_ticks", 9))))
+        cbar.ax.yaxis.set_minor_locator(mticker.NullLocator())
+    else:
+        try:
+            cbar.ax.yaxis.set_minor_locator(mticker.AutoMinorLocator())
+        except Exception:
+            pass
     return cbar
 
 

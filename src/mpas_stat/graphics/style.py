@@ -11,6 +11,8 @@ mpl.use("AGG")
 import matplotlib.pyplot as plt  # noqa: E402  (backend must be selected first)
 import numpy as np
 
+from .colour import line_palette
+
 
 # ===========================================================================
 # Publication style
@@ -83,7 +85,7 @@ def get_exp_plot_settings(cfg):
         raise ValueError("experiments.labels must have the same length as experiments.names")
 
     if colors is None:
-        colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+        colors = line_palette(cfg)
     if linestyles is None:
         linestyles = ["-"] * len(exp_names)
 

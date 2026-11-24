@@ -1,0 +1,57 @@
+# =============================================================================
+# 12  Sensitivity study: several experiments against one control
+# =============================================================================
+# E.g. a localization-scale sweep. Every experiment after the first is
+# compared with the first: one scorecard per experiment, and the comparison
+# maps show each experiment's % difference from the control.
+# Line colours come from the colour-blind-safe palette in this order.
+#
+#   mpas-stat-obs       12_multi_experiment_sensitivity.yaml
+#   mpas-stat-obs-plot  12_multi_experiment_sensitivity.yaml
+#
+# Look at: scorecard/scorecard_omb_<exp>_vs_loc_1000km.png, one per experiment.
+# =============================================================================
+
+paths:
+  da_dir: /path/to/mpasjedi_runs
+  hofx_dir: /path/to/mpasjedi_runs
+  diag_dir: /path/to/mpasjedi_runs
+  graphic_dir: /path/to/verify_obs/localization_sweep
+
+experiments:
+  names: [loc_1000km, loc_600km, loc_400km, loc_250km]
+  labels: [1000 km (ctrl), 600 km, 400 km, 250 km]
+  types: [da, da, da, da]
+  outerloop: [2, 2, 2, 2]
+  n_member: [1, 1, 1, 1]
+
+sensors: [sondes, aircraft, satwind, gnssrorefncep, amsua_n19, amsua_metop-b]
+
+domains:
+  global: [null, null, null, null]
+  NXTro: [30.0, 90.0, -180.0, 180.0]
+  Tro: [-23.5, 23.5, -180.0, 180.0]
+  SXTro: [-90.0, -30.0, -180.0, 180.0]
+
+plot_settings:
+  plot_oma: false                       # OMB is what the localization affects downstream
+  apply_domains: [global, NXTro, Tro, SXTro]
+  figure_format: png
+  generate_lat_lon_2d: false            # 4 experiments x many maps gets heavy
+  generate_time_level_2d: true
+  generate_lat_vert_2d: true
+  comparison_relative_reduction_statistics: [RMS]
+  scorecard:
+    statistics: [RMS]
+    levels: [850, 700, 500, 300, 250, 200]
+
+time_settings:
+  start_time: "2024-09-13 00:00:00"
+  end_time: "2024-09-27 18:00:00"
+  interval: 6
+
+statistics:
+  method: weighted
+  common_sample: true                   # all four on the same observations
+
+n_workers: 6

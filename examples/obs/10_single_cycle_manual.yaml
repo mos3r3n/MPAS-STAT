@@ -1,0 +1,57 @@
+# =============================================================================
+# 10  Statistics for ONE cycle, by hand (what the batch scripts do per job)
+# =============================================================================
+# scripts/run_verify_obs.ksh fills configs/obs_input.yaml with sed for every
+# (experiment, cycle). This is the same thing written out for one cycle, for
+# debugging a cycle or re-running a single failed job:
+#
+#   mpas-stat-obs  10_single_cycle_manual.yaml
+#
+# All listed experiments are READ (so they share one common observation
+# sample), but only the experiments in `write` get statistics files. To
+# verify exp_test for this cycle while matching against exp_control, keep
+# both names and write only exp_test.
+# =============================================================================
+
+paths:
+  da_dir: /path/to/mpasjedi_runs
+  hofx_dir: /path/to/mpasjedi_runs
+  diag_dir: /path/to/mpasjedi_runs      # -> <diag_dir>/exp_test/VerifyOBS/2024091312/
+  graphic_dir: /path/to/scratch
+
+experiments:
+  names: [exp_test, exp_control]        # the verified experiment first
+  types: [da, da]
+  outerloop: [2, 2]
+  n_member: [1, 1]
+  write: [exp_test]
+
+sensors: [sondes, aircraft, satwind, sfc, gnssrorefncep, amsua_n19]
+
+# Must match the graphics config exactly.
+domains:
+  global: [null, null, null, null]
+  NXTro: [30.0, 90.0, -180.0, 180.0]
+  Tro: [-23.5, 23.5, -180.0, 180.0]
+  SXTro: [-90.0, -30.0, -180.0, 180.0]
+
+plot_settings:
+  plot_oma: true
+  apply_domains: [global, NXTro, Tro, SXTro]
+  generate_lat_lon_2d: true
+  latlon_domain: global                 # named box, never "auto", for per-cycle runs
+  latlon_lat_bin_width: 10.0
+  latlon_lon_bin_width: 10.0
+  generate_lat_vert_2d: true
+
+time_settings:
+  start_time: "2024-09-13 12:00:00"
+  end_time: "2024-09-13 12:00:00"       # one cycle
+  interval: 6
+
+statistics:
+  method: weighted
+  qc_pass_flags: [0, 19]
+  common_sample: true
+  error_diagnostics: true
+  ensemble_diagnostics: true

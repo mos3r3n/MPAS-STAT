@@ -9,6 +9,9 @@ import netCDF4 as nc4
 import numpy as np
 
 from .common import (
+    ERROR_DIAG_KEYS,
+    SPREAD_BIN_EDGES,
+    SPREAD_SKILL_KEYS,
     STAT_KEYS,
     STAT_KEYS_2D,
     nc_group_name,
@@ -71,6 +74,17 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
             lo[:] = np.asarray(lon_centers, dtype=np.float32)
             lo.units = "degrees_east"
 
+        n_member = int((results.get("n_member") or [1] * (iexp + 1))[iexp])
+        ens_diag = "rank_omb" in results and n_member > 1
+        if ens_diag:
+            n_rank = n_member + 1
+            ds.createDimension("nRank", n_rank)
+            ds.createDimension("nSpreadBins", len(SPREAD_BIN_EDGES) - 1)
+            ds.createDimension("nSpreadBinEdges", len(SPREAD_BIN_EDGES))
+            edges = ds.createVariable("SpreadBinEdges", "f8", ("nSpreadBinEdges",))
+            edges[:] = SPREAD_BIN_EDGES
+            edges.long_name = "total-spread bin edges of the SpreadSkill* variables"
+
         if bin_method == 3:
             profile_entries = ([("lat_bin_profile", global_idx)]
                                if global_idx is not None else [])
@@ -90,25 +104,36 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
                 d0 = var_grp.createGroup("0D")
                 for idom, domain in enumerate(domains):
                     region_grp = d0.createGroup(domain)
-                    for stat_disp, prefix in STAT_KEYS:
+                    for stat_disp, prefix in STAT_KEYS + ERROR_DIAG_KEYS:
                         key = f"{prefix}_{diagtype}"
                         if key not in results:
                             continue
                         val = results[key][(iexp, idom) + time_idx + (iv,)]
                         var_out = region_grp.createVariable(stat_disp, "f4", ())
                         var_out[:] = np.float32(val)
+                    if ens_diag and diagtype == "omb":
+                        hist = region_grp.createVariable("RankHistogram", "f8", ("nRank",))
+                        hist[:] = results["rank_omb"][(iexp, idom) + time_idx + (iv,)][:n_rank]
+                        hist.long_name = "observation rank among perturbed members (counts)"
+                        for stat_disp, prefix in SPREAD_SKILL_KEYS:
+                            v = region_grp.createVariable(stat_disp, "f8", ("nSpreadBins",))
+                            v[:] = results[f"{prefix}_omb"][(iexp, idom) + time_idx + (iv,)]
 
                 # ---- 1D: binned profile stats ----
                 d1 = var_grp.createGroup("1D")
                 for pkey, idom in profile_entries:
                     prof_grp = d1.createGroup(pkey)
-                    for stat_disp, prefix in STAT_KEYS:
+                    for stat_disp, prefix in STAT_KEYS + ERROR_DIAG_KEYS:
                         key = f"{prefix}_{diagtype}_bin"
                         if key not in results:
                             continue
                         arr = results[key][(iexp, idom) + time_idx + (slice(None), iv)]
                         var_out = prof_grp.createVariable(stat_disp, "f4", ("nLevels",))
                         var_out[:] = arr.astype(np.float32)
+                    if ens_diag and diagtype == "omb":
+                        hist = prof_grp.createVariable("RankHistogram", "f8", ("nLevels", "nRank"))
+                        hist[:] = results["rank_omb_bin"][(iexp, idom) + time_idx
+                                                          + (slice(None), iv)][:, :n_rank]
 
                 # ---- 2D: lat-lon gridded stats (global) ----
                 if have_2d:

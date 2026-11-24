@@ -14,6 +14,7 @@ from .axes import (
     _pixel_edge_kwargs,
     _set_categorical_axis,
 )
+from .colour import colour_scale, share_limits
 from .style import (
     _ensure_panel_ticks,
     _relative_ref_threshold,
@@ -27,59 +28,31 @@ from .style import (
 # ---------------------------------------------------------------------------
 
 def _colourmap_settings(use_relative, stat_name, cfg, data=None, refname="cntl"):
-    """Return (cmap, vmin, vmax, cbar_label) for a panel.
+    """Return (cmap_name, vmin, vmax, cbar_label) for a panel.
 
-    For 2-D absolute ``mean`` fields, use the same diverging colour map as
-    difference / relative panels, because mean diagnostics are often signed
-    and centred near zero. Other absolute statistics keep the sequential
-    light-to-deep colour map.
+    vmin/vmax are only the EXPLICITLY configured limits (None otherwise);
+    data-driven limits are chosen by graphics.colour.colour_scale() from all
+    panels that share a colour bar. For 2-D absolute ``mean`` fields the
+    diverging colour map is used too, because mean diagnostics are signed and
+    centred near zero; other absolute statistics use the sequential map.
     """
     style = cfg.get("plot_style", {})
-    relative_cmap = cfg.get("relative_reduction_cmap",
-                            style.get("relative_cmap", "RdBu_r"))
+    diverging_cmap = cfg.get("relative_reduction_cmap",
+                             style.get("diverging_cmap", style.get("relative_cmap", "RdBu_r")))
 
     if use_relative:
-        # Diverging and colorblind-friendly enough for signed percent changes.
-        # Honour an explicit vmin/vmax if the user configured one; otherwise
-        # scale symmetrically to this panel's own data (same approach as the
-        # "mean" branch below) instead of a fixed +/-40% range.
-        vmin = cfg.get("relative_reduction_vmin", style.get("relative_vmin", None))
-        vmax = cfg.get("relative_reduction_vmax", style.get("relative_vmax", None))
-        if (vmin is None or vmax is None) and data is not None:
-            finite = np.asarray(data)[np.isfinite(data)]
-            if finite.size > 0:
-                amp = np.nanmax(np.abs(finite))
-                if np.isfinite(amp) and amp > 0.0:
-                    vmin = -amp if vmin is None else vmin
-                    vmax =  amp if vmax is None else vmax
-        # Fallback when nothing was configured and no usable data was given.
-        if vmin is None:
-            vmin = -40.0
-        if vmax is None:
-            vmax = 40.0
         return (
-            relative_cmap,
-            vmin,
-            vmax,
+            diverging_cmap,
+            cfg.get("relative_reduction_vmin", style.get("relative_vmin", None)),
+            cfg.get("relative_reduction_vmax", style.get("relative_vmax", None)),
             f"{stat_name} diff. (%) from {refname}",
         )
 
-    # Special case requested: only absolute 2-D mean fields should use the
-    # difference-style diverging colour map. Do not apply this to bias/OMB/OMA.
     if str(stat_name).lower() == "mean":
-        vmin = cfg.get("mean_vmin", None)
-        vmax = cfg.get("mean_vmax", None)
-        if (vmin is None or vmax is None) and data is not None:
-            finite = np.asarray(data)[np.isfinite(data)]
-            if finite.size > 0:
-                amp = np.nanmax(np.abs(finite))
-                if np.isfinite(amp) and amp > 0.0:
-                    vmin = -amp if vmin is None else vmin
-                    vmax =  amp if vmax is None else vmax
         return (
-            cfg.get("mean_cmap", relative_cmap),
-            vmin,
-            vmax,
+            cfg.get("mean_cmap", diverging_cmap),
+            cfg.get("mean_vmin", None),
+            cfg.get("mean_vmax", None),
             stat_name,
         )
 
@@ -89,6 +62,17 @@ def _colourmap_settings(use_relative, stat_name, cfg, data=None, refname="cntl")
         cfg.get("absolute_vmax", None),
         stat_name,
     )
+
+
+def _colorbar_extend(cfg, relative):
+    """Colour-bar extension arrows, as configured for _nice_colorbar."""
+    cbar_cfg = cfg.get("colorbar", {}) or {}
+    return cbar_cfg.get("extend_relative" if relative else "extend",
+                        "both" if relative else "neither")
+
+
+def _is_diverging(use_relative, stat_name):
+    return bool(use_relative) or str(stat_name).lower() == "mean"
 
 
 # ---------------------------------------------------------------------------
@@ -175,29 +159,40 @@ def _draw_2d_panels(fig, axs, var_names, exp_names, exp_labels,
         ref_entry   = (data_store.get(ref_exp) or {}).get(var_name)
         ref_samples = ref_entry[ref_key] if ref_entry else None
 
+        # Pass 1: every panel's data, so panels of one row can share a
+        # rounded colour scale (colorbar.share: row).
+        panels = []
         for iexp, exp_name in enumerate(exp_names):
+            entry = (data_store.get(exp_name) or {}).get(var_name)
+            plot_data = significant = None
+            if entry is not None:
+                plot_data, significant = _compute_panel_data(
+                    entry, ref_samples, iexp, use_rel, stat_name,
+                    boot, cfg, ref_key, var_name=var_name, ref_entry=ref_entry,
+                )
+            panels.append((iexp, entry, plot_data, significant))
+        row_data = {
+            rel: [pd for iexp, e, pd, _ in panels
+                  if pd is not None and (use_rel and iexp > 0) == rel]
+            for rel in (True, False)
+        }
+
+        for iexp, entry, plot_data, significant in panels:
+            exp_name = exp_names[iexp]
             ax = axs[ivar, iexp]
             panel_id += 1
-            entry = (data_store.get(exp_name) or {}).get(var_name)
 
             ax.grid(False)
-            if entry is None:
+            if entry is None or plot_data is None:
                 ax.axis("off")
                 continue
 
-            plot_data, significant = _compute_panel_data(
-                entry, ref_samples, iexp, use_rel, stat_name,
-                boot, cfg, ref_key, var_name=var_name, ref_entry=ref_entry,
-            )
-            if plot_data is None:
-                ax.axis("off")
-                continue
-
-            cmap, vmin, vmax, cbar_label = _colourmap_settings(
-                use_rel and iexp > 0, stat_name, cfg, data=plot_data, refname=exp_labels[0])
+            show_rel = use_rel and iexp > 0
+            cmap_name, vmin, vmax, cbar_label = _colourmap_settings(
+                show_rel, stat_name, cfg, data=plot_data, refname=exp_labels[0])
 
             # Unified colourbar limits for mean statistics.
-            if (not (use_rel and iexp > 0)
+            if (not show_rel
                     and str(stat_name).lower() == "mean"
                     and mean_cbar_limits is not None):
                 shared_limits = mean_cbar_limits.get(var_name)
@@ -205,6 +200,13 @@ def _draw_2d_panels(fig, axs, var_names, exp_names, exp_labels,
                     shared_vmin, shared_vmax = shared_limits
                     if shared_vmin is not None and shared_vmax is not None:
                         vmin, vmax = shared_vmin, shared_vmax
+
+            diverging = _is_diverging(show_rel, stat_name)
+            cmap, norm, levels = colour_scale(
+                cmap_name, vmin, vmax, cfg, diverging,
+                extend=_colorbar_extend(cfg, show_rel),
+                data_arrays=row_data[show_rel] if share_limits(cfg) else [plot_data],
+            )
 
             x    = entry[x_key]
             y    = entry[y_key]
@@ -222,7 +224,7 @@ def _draw_2d_panels(fig, axs, var_names, exp_names, exp_labels,
                 lon       = entry[cartopy_info["lon_key"]]
                 lat       = entry[cartopy_info["lat_key"]]
                 pcm = ax.pcolormesh(lon, lat, data, shading="auto", rasterized=True,
-                                    cmap=cmap, vmin=vmin, vmax=vmax,
+                                    cmap=cmap, norm=norm,
                                     transform=transform,
                                     **_pixel_edge_kwargs(cfg))
                 if significant is not None and boot["plot_significance"]:
@@ -248,7 +250,7 @@ def _draw_2d_panels(fig, axs, var_names, exp_names, exp_labels,
                 
             else:
                 pcm = ax.pcolormesh(x, y_plot, data, shading="auto", rasterized=True,
-                                    cmap=cmap, vmin=vmin, vmax=vmax,
+                                    cmap=cmap, norm=norm,
                                     **_pixel_edge_kwargs(cfg))
                 if significant is not None and boot["plot_significance"]:
                     add_significance(ax, x, y_plot, significant,
@@ -296,7 +298,7 @@ def _draw_2d_panels(fig, axs, var_names, exp_names, exp_labels,
                 elif entry.get(invert_y_key, False):
                     ax.invert_yaxis()
 
-            _nice_colorbar(fig, ax, pcm, cbar_label, cfg, relative=(use_rel and iexp > 0))
+            _nice_colorbar(fig, ax, pcm, cbar_label, cfg, relative=show_rel, levels=levels)
             ax.set_title(_title_with_panel(panel_id - 1, f"{exp_labels[iexp]}\n{var_name}"))
             _ensure_panel_ticks(ax)
 

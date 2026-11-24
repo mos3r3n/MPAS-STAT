@@ -1,0 +1,62 @@
+# =============================================================================
+# 05  Extended forecasts verified against observations (OMF)
+# =============================================================================
+# Forecast skill vs. lead time from HofX runs on forecast output
+# (types: hofx_forecast). Reads
+#   <hofx_dir>/<exp>/HofX/<init>/f<HHH>/dbOut/obsout_hofx_<obs>.h5
+# and writes  <diag_dir>/<exp>/VerifyOBS/<init>/f<HHH>/obsstat_<obs>.<valid>.nc
+#
+#   mpas-stat-obs       05_extended_forecast_omf.yaml
+#   mpas-stat-obs-plot  05_extended_forecast_omf.yaml
+# On a cluster: scripts/run_verify_obs_fcst.ksh for the statistics.
+#
+# Look at:  scorecard/scorecard_omf_<exp>_vs_<ref>.png  (columns = lead hours)
+#           <sensor>/forecast_lead_0d/
+# =============================================================================
+
+paths:
+  da_dir: /path/to/mpasjedi_runs
+  hofx_dir: /path/to/mpasjedi_runs
+  diag_dir: /path/to/mpasjedi_runs
+  graphic_dir: /path/to/verify_obs/forecast
+
+experiments:
+  names: [fc_control, fc_test]
+  labels: [Control, Test]
+  types: [hofx_forecast, hofx_forecast]
+  outerloop: [0, 0]
+  n_member: [1, 1]
+
+sensors: [sondes, aircraft, satwind, sfc, amsua_n19]
+
+domains:
+  global: [null, null, null, null]
+  NXTro: [30.0, 90.0, -180.0, 180.0]
+  Tro: [-23.5, 23.5, -180.0, 180.0]
+
+plot_settings:
+  apply_domains: [global, NXTro, Tro]
+  figure_format: png
+  generate_lat_lon_2d: true
+  latlon_domain: global
+  generate_time_level_2d: true
+  generate_lat_vert_2d: true
+  ci_style: errorbar
+  scorecard:
+    statistics: [RMS]
+    levels: [850, 500, 250]             # keep the forecast scorecard compact
+    leads: [24, 48, 72, 96, 120]        # null = every lead below
+
+time_settings:                          # forecast INITIALIZATION times
+  start_time: "2024-09-13 00:00:00"
+  end_time: "2024-09-27 00:00:00"
+  interval: 24
+
+forecast:
+  start: 12                             # first lead hour (0 = include the analysis)
+  length: 120
+  interval: 12
+
+statistics:
+  method: weighted
+  common_sample: true

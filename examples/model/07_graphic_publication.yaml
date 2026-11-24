@@ -1,0 +1,61 @@
+# =============================================================================
+# Model space 07  Figures for a paper
+# =============================================================================
+# Vector PDF, error bars, larger fonts, fixed % colour range, discrete and
+# row-shared colour levels, colour-blind-safe lines. Only the graphics stage
+# needs re-running.
+#
+#   mpas-stat-graphics -c 07_graphic_publication.yaml
+# =============================================================================
+
+paths:
+  base_dir: /path/to/mpasjedi_runs
+  out_dir: /path/to/paper_figures/model
+
+figure_format: pdf
+
+experiments:
+  names: [exp_control, exp_test]
+  labels: [CTRL, EXP]
+  colors: [black, "#d95f02"]
+  linestyles: ["-", "--"]
+
+time:
+  start: 2024090100
+  end: 2024093018
+  interval_hours: 6
+
+variables: [U, T, Qv]
+statistics: [rms]
+regions: [Global, NHem, Tropics, SHem]
+relative_reduction_statistics: [rms]
+
+ci_style: errorbar
+relative_reduction_vmin: -10      # fixed colour range for % differences
+relative_reduction_vmax: 10
+
+colorbar:
+  discrete: true
+  levels_diverging: 10
+  levels_sequential: 10
+  share: row
+
+plot_style:
+  font_family: serif
+  font_size: 12
+  title_size: 13
+  label_size: 12
+  tick_size: 11
+  legend_size: 10
+  dpi: 300
+  diverging_cmap: RdBu_r
+  absolute_cmap: YlGnBu
+
+plot_types:
+  - profiles_1d
+  - profile_diff_1d
+  - lat_vert_2d
+
+bootstrap:
+  n_boot: 5000
+  ci: 95
