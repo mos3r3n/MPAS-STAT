@@ -68,6 +68,38 @@ def _map_spans(store, cfg):
     return ext[1], ext[0]
 
 
+def _map_figsize(nvars, nexps, lat_span, lon_span, cartopy_info):
+    """Figure size for a grid of lat-lon maps, with rows fitted to the map.
+
+    Maps are drawn with equal aspect, so a fixed panel size leaves a wide
+    domain (the globe is about 2.5:1) as a short strip in a tall slot, with
+    a colour bar far longer than the map. Each panel instead gets
+    ``MAP_WIDTH`` inches of map plus room for the colour bar, and a row
+    height that fits the map plus its title and tick labels. Tall domains
+    are capped at ``MAP_MAX_HEIGHT`` and drawn narrower.
+    """
+    if not (cartopy_info and cartopy_info.get("has_cartopy")):
+        return 5.0 * nexps, 3.5 * nvars
+    lat0, lat1 = lat_span if lat_span is not None else (-90.0, 90.0)
+    lon0, lon1 = lon_span if lon_span is not None else (-180.0, 180.0)
+    aspect = max(lon1 - lon0, 1e-3) / max(lat1 - lat0, 1e-3)
+    aspect = min(max(aspect, 0.4), 4.0)
+    map_w = MAP_WIDTH
+    map_h = map_w / aspect
+    if map_h > MAP_MAX_HEIGHT:
+        map_h = MAP_MAX_HEIGHT
+        map_w = map_h * aspect
+    panel_w = map_w + MAP_SIDE_SPACE
+    row_h = map_h + MAP_ROW_SPACE
+    return panel_w * nexps, row_h * nvars
+
+
+MAP_WIDTH = 3.9        # inches of map per panel
+MAP_MAX_HEIGHT = 4.5   # cap for tall domains
+MAP_SIDE_SPACE = 1.4   # latitude labels and colour bar
+MAP_ROW_SPACE = 1.0    # two-line panel title and longitude labels
+
+
 def _latitude_rows_span(spans, coord, data_t):
     """Accumulate the latitude span of the finite rows of data_t
     (shape (len(coord), n))."""
@@ -291,7 +323,7 @@ def plot_lat_lon_2d(LatLon, stat_name, cfg):
 
     fig, axs = plt.subplots(
         nvars, nexps,
-        figsize=(5.0 * nexps, 3.5 * nvars),
+        figsize=_map_figsize(nvars, nexps, lat_span, lon_span, cartopy_info),
         squeeze=False,
         subplot_kw={"projection": projection} if cartopy_info is not None else None,
     )
@@ -356,7 +388,7 @@ def plot_lat_lon_slice_2d(LatLonLev, stat_name, cfg, section_cfg):
 
     fig, axs = plt.subplots(
         nvars, nexps,
-        figsize=(5.0 * nexps, 3.5 * nvars),
+        figsize=_map_figsize(nvars, nexps, lat_span, lon_span, cartopy_info),
         squeeze=False,
         subplot_kw={"projection": projection} if cartopy_info is not None else None,
     )
