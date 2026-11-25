@@ -36,7 +36,7 @@ __all__ = ["plot_normdep_histogram", "plot_normdep_profile", "gaussian_tail_frac
 
 
 def gaussian_tail_fraction(k, sigma=1.0):
-    """P(|z| > k) for z ~ N(0, sigma^2)."""
+    """Return ``P(|z| > k)`` for ``z ~ N(0, sigma**2)``."""
     if not sigma or not np.isfinite(sigma) or sigma <= 0:
         return np.nan
     return math.erfc(k / (sigma * math.sqrt(2.0)))

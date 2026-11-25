@@ -1,63 +1,42 @@
-"""Observation-space verification -- STATISTICS stage.
+"""Observation-space verification: statistics stage.
 
-Reads IODA obs-space HDF5 files, computes statistics
-  - domain-averaged                       ("0D"),
-  - vertical/latitude binned profiles      ("1D"),
-  - lat-lon gridded maps                   ("2D/lat_lon", domain-independent,
-                                             covers plot_settings.latlon_domain's
-                                             box -- global by default),
-  - latitude x level cross-sections        ("2D/lat_vert", domain-independent,
-                                             same latitude box as lat_lon;
-                                             skipped for radiances),
-and writes them to observation-space "diagnosis" netCDF files, using the
-SAME group convention MPAS-STAT uses for its own mpasstat.<date>.nc files
-(see mpas_stat.model.driver.write_stats_results):
+Reads IODA observation-space HDF5 files and computes
+
+- domain averages (``0D``);
+- vertical or latitude profiles (``1D``);
+- lat-lon maps (``2D/lat_lon``) over ``plot_settings.latlon_domain``
+  (global by default);
+- latitude-level cross-sections (``2D/lat_vert``; not for radiances);
+
+then writes them to diagnosis netCDF files with the same group layout as
+the model-space ``mpasstat.<date>.nc`` files::
+
     <var>/0D/<region>/<stat>
     <var>/1D/<profile_key>/<stat>
     <var>/2D/lat_lon/<stat>
-    <var>/2D/lat_vert/<stat>       (pressure/height-binned sensors only)
+    <var>/2D/lat_vert/<stat>
 
-Two independent verification modes are supported, matching two distinct
-experiment "types" in the config's experiments.types list:
+Two modes, chosen by each experiment's ``types``:
 
-  - OMB/OMA (background/analysis, cycling DA). exp_type "da" (OMA too) or
-    "hofx" (OMB only). Reads
-        <da_dir>/<exp>/CyclingDA/<cycle>/dbOut/obsout_da_<obs>.h5
-        <hofx_dir>/<exp>/<cycle>/dbOut/obsout_hofx_<obs>.h5
-    time-resolved per assimilation cycle, writing one diagnosis file per
-    (experiment, cycle, obs type) to
-        <diag_dir>/<experiment>/VerifyOBS/<cycle>/obsstat_<obs>.<date>.nc
-    -- see process_experiment() / write_obs_diag_files(). The experiment
-    sits at the top of the tree, exactly mirroring MPAS-STAT's own
-    model-space <exp>/VerifyModel/<cycle>/mpasstat.<date>.nc convention --
-    obs type is not a separate directory level, since the filename itself
-    already identifies the sensor; see the path-convention comment above
-    obs_diag_file() in mpas_stat.obs.common for the full rationale.
+O−B / O−A (``da``, or ``hofx`` for O−B only)
+    Reads ``<da_dir>/<exp>/CyclingDA/<cycle>/dbOut/obsout_da_<obs>.h5`` or
+    ``<hofx_dir>/<exp>/<cycle>/dbOut/obsout_hofx_<obs>.h5`` and writes one
+    file per experiment, cycle and observation type to
+    ``<diag_dir>/<exp>/VerifyOBS/<cycle>/obsstat_<obs>.<date>.nc``.
 
-  - OMF (obs-minus-forecast, extended-forecast skill). exp_type
-    "hofx_forecast". Reads
-        <hofx_dir>/<exp>/HofX/<init_cycle>/f<HHH>/dbOut/obsout_hofx_<obs>.h5
-    for every configured forecast lead hour (config["forecast"]: length,
-    interval, start -- same schema as the model-space graphic.yaml), writing
-    one diagnosis file per (experiment, init cycle, lead hour, obs type) to
-        <diag_dir>/<experiment>/VerifyOBS/<init_cycle>/f<HHH>/obsstat_<obs>.<valid_date>.nc
-    -- mirroring mpas_stat.graphics.io.get_mpasstat_forecast_file exactly.
-    See process_forecast_experiment() / write_obs_forecast_diag_files().
+O−F (``hofx_forecast``)
+    Reads ``<hofx_dir>/<exp>/HofX/<init>/f<HHH>/dbOut/obsout_hofx_<obs>.h5``
+    for every lead in ``forecast`` and writes
+    ``<diag_dir>/<exp>/VerifyOBS/<init>/f<HHH>/obsstat_<obs>.<valid>.nc``.
 
-An experiments list may freely mix "da"/"hofx" and "hofx_forecast" entries;
-each is processed and written by the function above that understands it.
+The two kinds can be mixed in one experiments list. This stage does not
+import matplotlib; :mod:`mpas_stat.obs.plot` draws the figures.
 
-This stage has NO plotting code and does not import matplotlib or any
-MPAS-STAT graphics module -- see mpas_stat.obs.plot for the separate
-graphics stage, which reads these files back and draws figures via
-mpas_stat.graphics.functions.
-
-Implementation modules:
-  obs.reader   -- IODA file names and HDF5 reading (load_observation_data)
-  obs.binning  -- 0D/1D/2D statistics kernels
-  obs.bounds   -- automatic lat-lon bounds detection
-  obs.process  -- per-sensor OMB/OMA and OMF processing, main()
-  obs.writer   -- diagnosis netCDF writers
+Implementation modules: :mod:`~mpas_stat.obs.reader` (file names, HDF5
+reading), :mod:`~mpas_stat.obs.binning` (statistics kernels),
+:mod:`~mpas_stat.obs.bounds` (lat-lon bounds), :mod:`~mpas_stat.obs.process`
+(per-sensor processing, ``main``) and :mod:`~mpas_stat.obs.writer`
+(diagnosis files).
 """
 from .reader import (
     _resolve_h5_path,

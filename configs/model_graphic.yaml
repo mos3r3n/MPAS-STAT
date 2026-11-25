@@ -73,7 +73,7 @@ statistics:
 region: Global
 
 # How cycles are combined in time-averaged figures: "pooled" (default; RMS =
-# sqrt(sum w*rms^2 / sum w) etc., USER_GUIDE section 5.2) or "mean" (plain mean
+# sqrt(sum w*rms^2 / sum w) etc., docs/guide/methods.md §5.2) or "mean" (plain mean
 # of per-cycle statistics, the pre-2026-11 behaviour).
 time_aggregation: pooled
 

@@ -411,7 +411,7 @@ def collect_obs_forecast_lead_0d(diag_base_dir, exp_name, diag_obs, cycles, lead
 # files. Each is bootstrap-aggregated over initialization cycles, exactly
 # like their model-space counterparts (unlike the plain time-mean OMB/OMA
 # 1D/2D collectors above, which intentionally skip bootstrap CI -- see
-# MPAS-STAT/docs/USER_GUIDE.md's "Known limitations").
+# docs/guide/conventions.md, "Known limitations").
 # ----------------------------------------------------------------------------
 
 def collect_obs_forecast_profiles_1d(diag_base_dir, exp_name, diag_obs, cycles, lead,

@@ -291,14 +291,11 @@ def prepare_all_variable_fields_ensemble(
     config: MPASConfig,
     logger: logging.Logger,
 ) -> Dict[str, Dict[str, Optional[np.ndarray]]]:
-    """
-    Preload requested variables for ensemble runs.
+    """Preload the requested variables for an ensemble run.
 
-    Changes from the original version:
-    - optionally read ensemble members concurrently;
-    - keep one file-open per member;
-    - update sum/sumsq/count immediately as each member finishes, so member
-      arrays are released quickly.
+    Members can be read concurrently; each member file is opened once, and the
+    running sum, sum of squares and count are updated as each member finishes,
+    so member arrays are released early.
     """
     variable_cache: Dict[str, Dict[str, Optional[np.ndarray]]] = {}
 

@@ -24,7 +24,7 @@ publication-style figures.
 
 An optional radar composite-reflectivity product lives in
 `src/mpas_stat/radar/`. It uses METplus/`grid_stat` for neighborhood scores
-and is documented in the user guide; the original all-Python standalone
+and is documented in [`docs/guide/radar.md`](docs/guide/radar.md); the original all-Python standalone
 script is kept under `legacy/` for reference.
 
 ## Requirements
@@ -190,9 +190,9 @@ MPAS-STAT/
 │   │   └── common.py, sensor_config.py
 │   ├── radar/                        # optional radar product
 │   └── cli/                          # command-line entry points
-├── docs/USER_GUIDE.md                # full documentation
+├── docs/                           # Sphinx documentation (guide/, api/, conf.py)
 ├── examples/                         # example configs by use case (obs/, model/; see examples/README.md)
-├── tests/                            # unit tests (test_smoke.py, test_structure.py)
+├── tests/                            # unit tests (pytest)
 └── legacy/radar_reflectivity_verify.py
 ```
 
@@ -206,9 +206,24 @@ Diagnosis-file conventions:
 
 ## Documentation
 
-The full guide — config schema, statistics definitions, netCDF schema,
-plot types, shared conventions, radar/METplus details, and known
-limitations — is in [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
+The full documentation is a Sphinx site built from [`docs/`](docs/):
+installation, quick start, the user guide (config schema, statistics
+definitions, netCDF schema, plot types, radar/METplus details, known
+limitations), every example and template configuration, and an API
+reference generated from the docstrings. Build it locally with
+
+```bash
+pip install -e ".[docs]"
+sphinx-build -b html docs docs/_build/html   # open docs/_build/html/index.html
+```
+
+The guide pages are plain Markdown and also read well on GitHub:
+[overview](docs/guide/overview.md) ·
+[model space](docs/guide/model_space.md) ·
+[observation space](docs/guide/obs_space.md) ·
+[radar](docs/guide/radar.md) ·
+[conventions](docs/guide/conventions.md) ·
+[statistical methods](docs/guide/methods.md).
 
 ## Testing
 
@@ -223,22 +238,18 @@ every command-line entry point starts and that every config in `examples/`
 loads (`tests/test_examples.py`).
 
 The tests insert `src/` on `sys.path`, so they run from the repository root
-without installing. They cover bin-center/edge consistency, domain masking
-with missing QC, the percent-reduction sign convention, pressure-level
-binning, config merging, HDF5 file resolution, `ObsType` layouts, and the
-Python 3.9 import path, plus (test_structure.py) the backwards-compatible
-import paths, the shared `core` helpers, the unified IODA reader, and an
-obs-space statistics -> diagnosis file -> collector round trip. They need `numpy`, `netCDF4`, `h5py`, and
-`matplotlib`; they do not require input data or METplus.
+without installing. They build small synthetic MPAS and IODA files, so they
+need no input data or METplus; see
+[`docs/development.md`](docs/development.md).
 
 ## Status and known limitations
 
 - Statistics are area/mass-weighted, pooled over cycles, and (obs space)
   computed on one common observation sample; QC flag 19 counts as passed.
-  This changed in 2026-11 — see USER_GUIDE §5, including the switches that
+  This changed in 2026-11 — see [`docs/guide/methods.md`](docs/guide/methods.md) §5, including the switches that
   reproduce older results exactly.
 - Bootstrap significance treats cycles as independent, so it is somewhat
-  optimistic (USER_GUIDE §5.5).
+  optimistic ([methods §5.5](docs/guide/methods.md)).
 - Experiment-vs-control figures (2-D comparison panels, profile and
   lead-time difference plots, scorecard) show the percent **difference**
   `100 × (exp − ref) / ref`: **negative = lower RMS/STD than the control
@@ -251,7 +262,9 @@ obs-space statistics -> diagnosis file -> collector round trip. They need `numpy
 - Vertical coordinates (pressure, height, model level) are drawn as
   equally spaced categorical axes; the original values are kept as tick
   labels.
-- Axis/legend labels show statistic names, not physical units.
+- Panel titles carry the variable and its units (`T (K)`), axis labels the
+  statistic (`rms`, `rms: % diff. from Control`), following NCAR
+  mpas-jedi-graphics.
 - The radar METplus/`grid_stat` integration has not been validated against
   every MET version; run one cycle and inspect the logs before production
   use.

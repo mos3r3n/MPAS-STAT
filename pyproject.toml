@@ -35,6 +35,10 @@ dependencies = [
 accelerate = ["numba>=0.55"]
 maps = ["cartopy>=0.20"]
 dev = ["pyflakes>=3.0", "pytest>=7"]
+docs = ["sphinx>=7", "myst-parser>=2", "furo", "sphinx-copybutton"]
+
+[project.urls]
+Source = "https://github.com/mos3r3n/MPAS-STAT"
 
 [project.scripts]
 mpas-stat-model = "mpas_stat.cli.model_stats:main"

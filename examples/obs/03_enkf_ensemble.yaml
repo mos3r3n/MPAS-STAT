@@ -14,7 +14,7 @@
 #   <sensor>/spread_skill/spread_skill_<domain>.png         above 1:1 = too little spread
 #   <sensor>/error_consistency_1d/   TotalSpread / RMS(OMB) (dashed, bottom row)
 #   <sensor>/normalized_departure/   (O-B) / total spread: RMS 1, Gaussian tails
-# docs/USER_GUIDE.md sections 5.3 and 5.7 explain the diagnostics.
+# docs/guide/methods.md §5.3 and §5.7 explain the diagnostics.
 # =============================================================================
 
 paths:

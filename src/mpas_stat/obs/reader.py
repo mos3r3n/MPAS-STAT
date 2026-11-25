@@ -103,11 +103,13 @@ def build_filename(base_dir: str, exp_name: str, exp_type: str, exp_member: int,
 
 def build_hofx_forecast_filename(hofx_dir: str, exp_name: str, init_time: datetime,
                                 lead_hour: int, diag_obs: str) -> Optional[str]:
-    """Construct the OMF (obs-minus-forecast, extended-forecast skill)
-    HofX filename for one (experiment, init cycle, forecast lead hour):
+    """Return the O−F HofX file name for one experiment, init cycle and lead::
+
         <hofx_dir>/<exp_name>/HofX/<init_cycle>/f<HHH>/dbOut/obsout_hofx_<obs>.h5
-    Falls back to a wildcard match if the exact filename doesn't exist, same
-    as build_filename()."""
+
+    Falls back to a wildcard match if that file does not exist, as
+    :func:`build_filename` does.
+    """
     obs_name = source_obs_name(diag_obs)
     init_str = init_time.strftime("%Y%m%d%H")
     fname = (

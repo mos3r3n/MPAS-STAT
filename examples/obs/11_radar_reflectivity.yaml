@@ -1,7 +1,7 @@
 # =============================================================================
 # 11  Radar composite reflectivity: neighbourhood skill of forecasts
 # =============================================================================
-# Separate opt-in product (docs/USER_GUIDE.md section 2.6): grids observed and
+# Separate opt-in product (docs/guide/radar.md §2.6): grids observed and
 # forecast composite reflectivity and computes FSS / TS / ETS / FBIAS / POD /
 # FAR with MET grid_stat (METplus must be installed) plus RMSE, vs. lead time.
 #

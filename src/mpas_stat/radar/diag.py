@@ -19,7 +19,7 @@ being folded into process_forecast_experiment().
 Only "hofx_forecast"-typed experiments are processed here, exactly like
 mpas_stat.obs.diag's own OMF product -- radar composite reflectivity
 has no cycling/OMB-OMA counterpart in this package (see
-docs/USER_GUIDE.md, section 2.6).
+docs/guide/radar.md §2.6).
 
 Computation kernels and the config schema live in mpas_stat.radar.common,
 shared with mpas_stat.radar.plot. Gridding and RMSE are computed natively

@@ -64,7 +64,7 @@ verbose: true
 
 overwrite: true
 
-# Statistics method (docs/USER_GUIDE.md section 5). "weighted" = area- and
+# Statistics method (docs/guide/methods.md §5). "weighted" = area- and
 # mass-weighted, pooled statistics; "legacy" reproduces pre-2026-11 results.
 statistics_method: weighted
 area_weighting: true

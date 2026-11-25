@@ -38,14 +38,20 @@ __all__ = ["plot_rank_histogram", "plot_rank_histogram_levels", "plot_spread_ski
 
 
 def rank_histogram_summary(hist):
-    """(normalized frequency, outlier ratio, reliability index) of a rank
-    histogram of n_member+1 counts.
+    """Summarize a rank histogram of ``n_member + 1`` counts.
 
-    normalized frequency: count / (total / n_rank), 1 = flat.
-    outlier ratio: share of observations in the two extreme ranks divided
-        by its expected value 2/n_rank (> 1: under-dispersive or biased).
-    reliability index: mean |frequency - 1| (Delle Monache et al. 2006),
-        0 for a perfectly flat histogram."""
+    Returns ``(normalized frequency, outlier ratio, reliability index)``:
+
+    normalized frequency
+        ``count / (total / n_rank)``; 1 means flat.
+    outlier ratio
+        Share of observations in the two extreme ranks divided by its
+        expected value ``2 / n_rank``; above 1 means under-dispersive or
+        biased.
+    reliability index
+        Mean ``|frequency - 1|`` (Delle Monache et al. 2006); 0 for a
+        perfectly flat histogram.
+    """
     hist = np.asarray(hist, dtype=np.float64)
     n = hist.size
     total = hist.sum()
