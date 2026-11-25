@@ -17,6 +17,8 @@ from .binning import (
 from .bounds import _resolve_latlon_bounds_for
 from .common import (
     ERROR_DIAG_KEYS,
+    MET_ECNT_KEYS,
+    MET_SL1L2_KEYS,
     NORM_DEP_EDGES,
     SPREAD_BIN_EDGES,
     SPREAD_SKILL_KEYS,
@@ -118,7 +120,8 @@ def _resolve_stat_grids(config: Dict, diag_obs: str, obs_config, bin_method: int
 
 def _allocate_results(tags, lead_shape: Tuple[int, ...], grids: Dict,
                       num_exp: int, num_dom: int, num_time: int, num_var: int,
-                      error_diag=(), n_rank: int = 0, norm_dep: bool = False) -> Dict:
+                      error_diag=(), n_rank: int = 0, norm_dep: bool = False,
+                      met: bool = False, ecnt: bool = False) -> Dict:
     """NaN-filled result arrays for every diagtype in `tags` ("omb"/"oma"
     for cycling DA, "omf" for extended forecasts).
 
@@ -157,6 +160,16 @@ def _allocate_results(tags, lead_shape: Tuple[int, ...], grids: Dict,
                 results[f"{p}_count_{tag}"] = np.zeros(zero_d)
                 results[f"{p}_count_{tag}_bin"] = np.zeros(one_d)
                 results[f"{p}hist_{tag}"] = np.zeros(zero_d + (nhist,))
+
+    if met:
+        for tag in tags:
+            # ECNT for the background and forecasts only: the members in
+            # the files are background (or forecast) members.
+            keys = MET_SL1L2_KEYS + (MET_ECNT_KEYS if ecnt and tag != "oma" else [])
+            for _, prefix in keys:
+                fill = 0.0 if prefix in ("sl_total", "ec_total") else np.nan
+                results[f"{prefix}_{tag}"] = np.full(zero_d, fill)
+                results[f"{prefix}_{tag}_bin"] = np.full(one_d, fill)
 
     if n_rank > 1:
         nsb = len(SPREAD_BIN_EDGES) - 1
@@ -229,6 +242,64 @@ def _store_domain_stats(results: Dict, tag: str, idx: Tuple, iv: int, obs_vec: D
         valid = stats["count"][:num_lev] > 0
         results[f"{field}_{tag}_bin"][idx + (valid, iv)] = stats[agg][:num_lev][valid]
 
+    if f"sl_total_{tag}" in results and obs_vec.get("obs") is not None:
+        _store_partial_sums(results, tag, idx, iv, obs_vec, qc, bin_values, levels, bin_method)
+
+
+def _binned_means(quantities: Dict, qc, bin_values, levels, bin_method):
+    """Mean of each array in ``quantities`` over the domain (index -1) and
+    per level bin, on the samples where ALL of them are finite and QC
+    passes, and the count of those samples."""
+    arrays = {k: np.asarray(v, dtype=np.float64) for k, v in quantities.items()}
+    ok = np.logical_and.reduce([np.isfinite(a) for a in arrays.values()])
+    means, count = {}, None
+    for key, a in arrays.items():
+        stats = calculate_stats(np.where(ok, a, np.nan), qc, bin_values, levels, bin_method)
+        means[key] = np.asarray(stats["mean"], dtype=np.float64)
+        count = np.asarray(stats["count"], dtype=np.float64)
+    return means, count
+
+
+def _put(results, key, idx, iv, values, count, num_lev):
+    """Store domain (index num_lev) and per-level values where count > 0."""
+    if count[num_lev] > 0:
+        results[key][idx + (iv,)] = values[num_lev]
+    valid = count[:num_lev] > 0
+    results[f"{key}_bin"][idx + (valid, iv)] = values[:num_lev][valid]
+
+
+def _store_partial_sums(results, tag, idx, iv, vec, qc, bin_values, levels,
+                        bin_method) -> None:
+    """MET SL1L2 partial sums of one vector and domain (F = H(x) = O - d,
+    O = ObsValue) and, for an ensemble, the ECNT CRPS and spread terms."""
+    num_lev = len(levels)
+    o = np.asarray(vec["obs"], dtype=np.float64)
+    fcst = o - np.asarray(vec["innov"], dtype=np.float64)
+    means, count = _binned_means(
+        {"fbar": fcst, "obar": o, "fobar": fcst * o, "ffbar": fcst * fcst,
+         "oobar": o * o, "mae": np.abs(fcst - o)},
+        qc, bin_values, levels, bin_method)
+    results[f"sl_total_{tag}"][idx + (iv,)] = count[num_lev]
+    results[f"sl_total_{tag}_bin"][idx + (slice(None), iv)] = count[:num_lev]
+    for name, values in means.items():
+        _put(results, f"sl_{name}_{tag}", idx, iv, values, count, num_lev)
+
+    if f"ec_total_{tag}" not in results or vec.get("crps") is None:
+        return
+    terms = {"crps": vec["crps"], "crps_fair": vec["crps_fair"], "var": vec["ens_var"]}
+    err = vec.get("obserr")
+    if err is not None:
+        terms["var_oerr"] = np.asarray(vec["ens_var"], dtype=np.float64) + np.asarray(err) ** 2
+    means, count = _binned_means(terms, qc, bin_values, levels, bin_method)
+    results[f"ec_total_{tag}"][idx + (iv,)] = count[num_lev]
+    results[f"ec_total_{tag}_bin"][idx + (slice(None), iv)] = count[:num_lev]
+    _put(results, f"ec_crps_{tag}", idx, iv, means["crps"], count, num_lev)
+    _put(results, f"ec_crps_fair_{tag}", idx, iv, means["crps_fair"], count, num_lev)
+    _put(results, f"ec_spread_{tag}", idx, iv, np.sqrt(means["var"]), count, num_lev)
+    if "var_oerr" in means:
+        _put(results, f"ec_spread_oerr_{tag}", idx, iv, np.sqrt(means["var_oerr"]),
+             count, num_lev)
+
 
 def _metadata(times, levels, obs_config, domains: Dict) -> Dict:
     return {
@@ -280,6 +351,8 @@ def process_experiment(config: Dict, diag_obs: str) -> Dict:
                     if settings.get("error_diagnostics") else ()),
         n_rank=_n_rank(config, settings),
         norm_dep=bool(settings.get("normalized_departures")),
+        met=bool(settings.get("met_statistics")),
+        ecnt=_has_ensemble(config, forecast=False),
     )
     results.update(_metadata(times, levels, obs_config, domains))
     results["n_member"] = list(config["experiments"]["n_member"])
@@ -475,6 +548,14 @@ def _store_normalized_departures(results, tag, idx, iv, vec, qc, bin_values, lev
         results[f"{prefix}hist_{tag}"][idx + (iv,)] = hist[:nbins]
 
 
+def _has_ensemble(config: Dict, forecast: bool) -> bool:
+    """Whether any cycling (or, with ``forecast``, hofx_forecast)
+    experiment has more than one member."""
+    return any(int(n) > 1 and ((t == "hofx_forecast") == forecast)
+               for n, t in zip(config["experiments"]["n_member"],
+                               config["experiments"]["types"]))
+
+
 def _n_rank(config: Dict, settings: Dict) -> int:
     """Rank-histogram length (largest n_member + 1 among the cycling
     experiments), or 0 when ensemble diagnostics are off / no ensemble."""
@@ -611,6 +692,8 @@ def process_forecast_experiment(config: Dict, diag_obs: str) -> Dict:
         ("omf",), (len(leads),), grids,
         num_exp=len(config["experiments"]["names"]), num_dom=len(domains),
         num_time=len(times), num_var=len(obs_config.variables),
+        met=bool(settings.get("met_statistics")),
+        ecnt=_has_ensemble(config, forecast=True),
     )
     results.update(_metadata(times, levels, obs_config, domains))
     results["n_member"] = list(config["experiments"]["n_member"])

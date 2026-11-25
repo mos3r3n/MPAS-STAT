@@ -228,6 +228,30 @@ def _observation_rank(members: np.ndarray, obs_value, innov, obserr,
     return np.where(ok, rank, np.nan)
 
 
+def _ensemble_crps(members: np.ndarray, obs: np.ndarray):
+    """Empirical CRPS of each observation against its ensemble, and the
+    "fair" CRPS (MET's CRPS_EMP and CRPS_EMP_FAIR).
+
+    With m members x_i and observation y:
+        CRPS_EMP      = mean_i |x_i - y| - sum_ij |x_i - x_j| / (2 m^2)
+        CRPS_EMP_FAIR = mean_i |x_i - y| - sum_ij |x_i - x_j| / (2 m (m - 1))
+    The fair version removes the dependence on ensemble size (Ferro 2014,
+    QJRMS 140, 1917-1923). NaN where any member or the observation is
+    missing. ``members`` has shape (m, nobs).
+    """
+    x = np.asarray(members, dtype=np.float64)
+    y = np.asarray(obs, dtype=np.float64)
+    m = x.shape[0]
+    ok = np.all(np.isfinite(x), axis=0) & np.isfinite(y)
+    xs = np.sort(np.where(ok[None, :], x, 0.0), axis=0)
+    k = np.arange(1, m + 1, dtype=np.float64)[:, None]
+    pair_sum = 2.0 * np.sum((2.0 * k - m - 1.0) * xs, axis=0)   # sum_ij |x_i - x_j|
+    term1 = np.mean(np.abs(xs - np.where(ok, y, 0.0)[None, :]), axis=0)
+    crps = term1 - pair_sum / (2.0 * m * m)
+    fair = term1 - pair_sum / (2.0 * m * (m - 1)) if m > 1 else np.full(y.shape, np.nan)
+    return np.where(ok, crps, np.nan), np.where(ok, fair, np.nan)
+
+
 def _ensemble_spread(members: np.ndarray, ddof: int, finite_correction: bool) -> np.ndarray:
     """Per-observation ensemble spread over axis 0 (NaN members ignored):
     sqrt of the variance with ``ddof``, times (N+1)/N when
@@ -283,7 +307,9 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
     additionally passes only for HofX-derived innovations; spread uses ddof 0.
 
     Returns a dict (lat, lon, hgt, pres, time, innov, qc, spread, totSpread,
-    obserr -- the assumed observation error, weighted method only),
+    obserr -- the assumed observation error, weighted method only; with
+    statistics.met_statistics also obs -- ObsValue -- and, for ensembles,
+    ens_var, crps and crps_fair),
     or None if the file cannot be read. ``time`` is MetaData/dateTime when
     present (used to match observations across files), else None.
     """
@@ -303,7 +329,12 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
         'totSpread': None,
         'obserr': None,
         'rank': None,
+        'obs': None,
+        'crps': None,
+        'crps_fair': None,
+        'ens_var': None,
     }
+    met = bool(settings and settings.get("met_statistics"))
 
     try:
         with h5py.File(filename, 'r') as f:
@@ -345,6 +376,12 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
                             obs_vector['innov'] = read('ObsValue') - hofx_used
                         break
 
+            # Observation value, for MET-style partial sums (F = O - departure).
+            # GNSS-RO departures are not O - H(x) in the variable's units.
+            if met and diag_var not in _HOFX_IS_INNOVATION and 'ObsValue' in f:
+                y = np.asarray(read('ObsValue'), dtype=np.float64)
+                obs_vector['obs'] = np.where(np.abs(y) < 1.0e30, y, np.nan)
+
             # --------------------------------------------------
             # Quality control flags (0 == pass)
             # --------------------------------------------------
@@ -379,6 +416,11 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
                     hofx_ens.append(np.where(_hofx_fill_mask(hofx), np.nan, hofx))
                 hofx_ens = np.stack(hofx_ens, axis=0)
                 obs_vector['spread'] = _ensemble_spread(hofx_ens, spread_ddof, spread_correction)
+                if met:
+                    obs_vector['ens_var'] = _ensemble_spread(hofx_ens, 1, False) ** 2
+                    if obs_vector['obs'] is not None:
+                        obs_vector['crps'], obs_vector['crps_fair'] = _ensemble_crps(
+                            hofx_ens, obs_vector['obs'])
                 # total spread
                 obserr = read('ObsError')
                 obs_vector['totSpread'] = np.sqrt(np.nan_to_num(obs_vector['spread'], nan=0.)**2+
@@ -425,6 +467,10 @@ def load_observation_data(filename: str, diag_obs: str, diag_var: Union[str, int
                 if nmember > 1:
                     obs_vector['spread'] *= 1000.
                     obs_vector['totSpread'] *= 1000.
+                for key, factor in (('obs', 1000.), ('crps', 1000.), ('crps_fair', 1000.),
+                                    ('ens_var', 1.0e6)):
+                    if obs_vector[key] is not None:
+                        obs_vector[key] = obs_vector[key] * factor
 
             return obs_vector
 

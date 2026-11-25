@@ -66,6 +66,8 @@ plot_settings:
   generate_channel_correlations: true  # radiances: inter-channel error correlations
   generate_ensemble_diagnostics: true  # rank histograms / spread-skill (ensembles)
   generate_error_consistency: true     # Desroziers / spread-consistency profiles
+  generate_continuous_statistics: true # MET-style MAE / correlation / stdev-ratio profiles, Taylor diagrams
+  write_continuous_tables: true        # cnt_<sensor>_<cycles>.csv with every MET continuous statistic
   scorecard:                         # one-page summary per experiment (false = off)
     statistics: [RMS]
     levels: null                     # e.g. [850, 500, 250]

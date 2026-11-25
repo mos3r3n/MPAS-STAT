@@ -77,6 +77,8 @@ from .common import (
     resolve_statistics_settings,
     resolve_time_settings,
 )
+from ..graphics.plots_continuous import plot_continuous_profiles, plot_taylor_diagram
+from .continuous import collect_continuous, export_continuous_tables
 from .error_export import export_error_estimates
 from .scorecard import generate_scorecards
 from .experiments import (
@@ -135,6 +137,14 @@ def _process_sensor(config, diag_obs, sensor_graphic_dir, diag_base_dir):
         if not ok:
             print(f"ERROR in {job[0].__name__} ({diag_obs}):\n{err}")
     print(f"[{diag_obs}] finished {len(jobs)} figures")
+    if config["plot_settings"].get("write_continuous_tables", True):
+        try:
+            for path in export_continuous_tables(config, diag_obs, diag_base_dir,
+                                                 os.path.join(sensor_graphic_dir, "continuous")):
+                print(f"Saved {path}")
+        except Exception:
+            print(f"ERROR writing continuous-statistics table ({diag_obs}):\n"
+                  f"{traceback.format_exc()}")
     if config["plot_settings"].get("write_error_tables", True):
         try:
             for path in export_error_estimates(config, diag_obs, diag_base_dir):
@@ -457,6 +467,50 @@ def channel_correlation_data(config, diag_obs, diag_base_dir, names, domain):
         d["B_sigma"], d["B_corr"], _ = correlation_from_cov(d["B"])
         out[n] = d
     return out
+
+
+def generate_continuous_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
+    """MET-style continuous statistics (mpas_stat.obs.continuous) of the
+    cycling experiments, per diagtype and domain: profiles of MAE,
+    correlation, stdev ratio and (ensembles) CRPS, and a Taylor diagram
+    (radiances: one point per channel). Skipped when
+    statistics.met_statistics or plot_settings.generate_continuous_statistics
+    is off."""
+    if not resolve_statistics_settings(config).get("met_statistics"):
+        return []
+    if not config["plot_settings"].get("generate_continuous_statistics", True):
+        return []
+    bin_method = get_bin_method(diag_obs)
+    display_vars = display_var_names(diag_obs)
+    domains = list(resolve_domains(config).keys())
+    apply = config["plot_settings"].get("apply_domains") or domains
+    adjusted_start, end_time, interval = resolve_time_settings(config, diag_obs)
+    cycles = generate_cycles(adjusted_start, end_time, interval)
+    coord_label, invert_y = _profile_axis_meta(bin_method)
+    surface = diag_obs.startswith("sfc")
+
+    jobs = []
+    for diagtype in ("omb", "oma"):
+        names, labels, colors = _experiments_for_diagtype(config, diagtype)
+        if not names:
+            continue
+        cfg = _comparison_graphic_cfg(config, graphic_out_dir, names, labels, colors)
+        cfg["variables"] = display_vars
+        cfg["variable_units"] = _units_map(diag_obs)
+        for domain in (d for d in domains if d in apply):
+            profile_key = None
+            if not surface and (bin_method != 3 or domain == "global"):
+                profile_key = profile_key_for_domain(bin_method, domain)
+            data = {n: collect_continuous(diag_base_dir, n, diag_obs, cycles, diagtype,
+                                          domain, profile_key) for n in names}
+            if not any(data.values()):
+                continue
+            if profile_key:
+                jobs.append((plot_continuous_profiles,
+                             (data, diagtype, domain, coord_label, invert_y, cfg), {}))
+            by = "variables" if (bin_method == 3 or surface) else "levels"
+            jobs.append((plot_taylor_diagram, (data, diagtype, domain, cfg), {"by": by}))
+    return jobs
 
 
 def generate_channel_correlation_graphics(config, diag_obs, graphic_out_dir, diag_base_dir):
@@ -910,6 +964,7 @@ def generate_plots(config, diag_obs, graphic_out_dir, diag_base_dir):
     jobs += generate_ensemble_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
     jobs += generate_normdep_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
     jobs += generate_channel_correlation_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
+    jobs += generate_continuous_graphics(config, diag_obs, graphic_out_dir, diag_base_dir)
 
     if diag_obs.startswith("sfc"):
         return jobs

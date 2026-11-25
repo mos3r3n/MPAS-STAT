@@ -353,3 +353,81 @@ statistics: {method: legacy}     # observation-space configuration
 ```
 
 The `Tv` and bending-angle fixes are not reverted by these settings.
+
+## 5.11 MET-style continuous statistics and `.stat` files
+
+Observation space also follows the MET verification system
+([MET User's Guide](https://metplus.readthedocs.io/projects/met/en/latest/Users_Guide/)):
+it stores MET's partial sums, derives MET's continuous statistics from
+them, and can write MET-format `.stat` files for the MET/METplus tools.
+Switched by `statistics.met_statistics` and `statistics.met_stat_files`
+(both on by default; off with `method: legacy`).
+
+**Partial sums (SL1L2).** For every O−B, O−A and O−F vector, domain and
+vertical bin, with F = H(x) = O − departure and O the observation over the
+TOTAL valid pairs, the statistics files hold `SL1L2_TOTAL` and the means
+`SL1L2_FBAR` (F), `SL1L2_OBAR` (O), `SL1L2_FOBAR` (F·O), `SL1L2_FFBAR` (F²),
+`SL1L2_OOBAR` (O²) and `SL1L2_MAE` (|F − O|), in double precision. They pool
+over cycles weighted by TOTAL, as `stat_analysis -job aggregate_stat` does.
+GNSS-RO, whose departures are not O − H(x) in the variable's units, has no
+partial sums.
+
+**Continuous statistics (CNT).** From the pooled sums:
+
+| Statistic | Definition |
+|---|---|
+| ME | mean(F − O) = FBAR − OBAR. **MET's sign**: the opposite of the O−B bias in the other figures |
+| MAE | mean \|F − O\| |
+| RMSE | √(FFBAR − 2 FOBAR + OOBAR) |
+| ESTDEV | √(MSE − ME²), standard deviation of the error |
+| MBIAS | FBAR / OBAR (meaningful for positive quantities such as humidity) |
+| FSTDEV, OSTDEV | √(FFBAR − FBAR²), √(OOBAR − OBAR²) |
+| PR_CORR | (FOBAR − FBAR·OBAR) / (FSTDEV·OSTDEV) |
+
+Standard deviations divide by TOTAL. RMSE and −ME equal the RMS and Bias of
+the departures, which is a useful check.
+
+**Ensembles (ECNT).** For O−B and O−F of ensembles, also:
+- the empirical CRPS, `ECNT_CRPS_EMP` = mean\|xᵢ − y\| − Σᵢⱼ\|xᵢ − xⱼ\| / 2m²;
+- the fair CRPS, `ECNT_CRPS_EMP_FAIR`, which divides the second term by
+  2m(m − 1) and so does not penalize small ensembles (Ferro 2014);
+- `ECNT_SPREAD`, √(mean member variance) with unperturbed members and
+  ddof 1;
+- `ECNT_SPREAD_PLUS_OERR`, √(mean(variance + σo²)).
+
+Lower CRPS is better; it combines the error of the ensemble mean with how
+well the spread matches it.
+
+**Outputs.**
+
+- `<sensor>/continuous/cnt_profile_<omb|oma>_<domain>`: MAE, correlation,
+  stdev ratio FSTDEV/OSTDEV and (ensembles) fair CRPS by level, one line
+  per experiment. `plot_settings.generate_continuous_statistics`.
+- `<sensor>/continuous/taylor_<omb|oma>_<domain>`: Taylor diagram (Taylor
+  2001). The radius is FSTDEV/OSTDEV and the angle arccos(PR_CORR); the
+  distance to the star at (1, 0) is the centred RMS difference divided by
+  OSTDEV. One point per level (radiances and surface: per channel or
+  variable) and experiment.
+- `<sensor>/continuous/cnt_<sensor>_<cycles>.csv`: every statistic above,
+  per experiment, O−B/O−A/O−F (with lead), domain, variable and level.
+  `plot_settings.write_continuous_tables`.
+- `obsstat_<obs>.<date>.stat`, next to each statistics file: MET 12
+  SL1L2, ECNT and RHIST lines. `MODEL` is the experiment, `DESC` is `OMB`,
+  `OMA` or `OMF`, and `FCST_LEAD` is the cycle interval for O−B, 0 for O−A
+  and the lead for O−F. `FCST_LEV` is `P<hPa>` or `Z<m>` per bin, or `ALL`;
+  radiance latitude bins are in `VX_MASK` as `<domain>_LAT<deg>`.
+  ECNT columns without a counterpart here (CRPSS, IGN, …) are `NA`, and the
+  rank histogram uses observations perturbed with their error.
+
+Pool the `.stat` files with MET, for example:
+
+```bash
+stat_analysis -lookin <diag_dir>/<exp>/VerifyOBS -job aggregate_stat \
+  -line_type SL1L2 -out_line_type CNT -by DESC,FCST_VAR,FCST_LEV,VX_MASK
+```
+
+```{note}
+The `.stat` layout follows the MET 12 documentation and is checked
+column by column in the tests, but has not been run through `stat_analysis`
+here. Try one file with your MET installation before relying on it.
+```

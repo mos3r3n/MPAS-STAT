@@ -61,6 +61,22 @@ Rank histogram
   How often the observation falls at each rank among the sorted
   ensemble members; flat for a reliable ensemble (§5.7).
 
+CRPS
+  Continuous ranked probability score: the error of the whole ensemble
+  distribution against the observation, in the variable's units; lower
+  is better. The "fair" CRPS removes the dependence on ensemble size
+  (§5.11).
+
+Partial sums (SL1L2)
+  MET's running means of F, O, F·O, F² and O² (F = H(x), O = observation)
+  and |F − O|. Every continuous statistic (ME, RMSE, correlation, …) can
+  be derived from them after pooling (§5.11).
+
+Taylor diagram
+  A plot of the stdev ratio (radius) against the correlation (angle), on
+  which the distance to the observation point is the centred RMS
+  difference (§5.11).
+
 Domain
   A latitude–longitude box over which observation-space statistics are
   averaged (`domains`). Model space uses latitude `regions`.
