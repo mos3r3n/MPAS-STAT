@@ -34,9 +34,9 @@ guide/overview
 guide/model_space
 guide/obs_space
 guide/radar
-guide/methods
 guide/conventions
 guide/layout
+guide/methods
 ```
 
 ```{toctree}

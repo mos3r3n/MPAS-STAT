@@ -1,132 +1,187 @@
 # 1. Model-space verification
 
-Compares an MPAS forecast field against its own initial/analysis field, on
-the native model grid, binned by lat/lon/level.
+Model space compares each MPAS forecast with its verifying analysis on the
+native mesh. The forecast minus analysis difference is pooled over grid
+cells by region, latitude band, lat-lon box and vertical level, with area
+and mass weights (§5.1).
 
-## 1.1 Files
-
-| File | Role |
-|---|---|
-| `src/mpas_stat/cli/model_stats.py` | Statistics entry point: `python -m mpas_stat.cli.model_stats -c configs/model_input.yaml` |
-| `src/mpas_stat/model/args.py` | CLI argument parsing / config overrides (`-f/-i/-o/-n/-v`, `--lat-bin`, ...) |
-| `src/mpas_stat/model/config.py` | `MPASConfig` dataclass — the schema `configs/model_input.yaml` is loaded into |
-| `src/mpas_stat/model/variables.py` | Extracts named physical variables (`U`, `V`, `T`, `Qv`, `RH`, `Z`, `U10`, `Ps`, ...) from raw MPAS netCDF fields, with units |
-| `src/mpas_stat/model/interp.py` | Builds shared vertical-interpolation coefficients (model level → height/pressure), numba-accelerated |
-| `src/mpas_stat/model/kernels.py` | The actual statistic kernels: 0-D region means, 1-D profiles, 2-D and 3-D binned products |
-| `src/mpas_stat/model/driver.py` | `calculate_statistics(config)` — orchestrates loading, interpolation, threaded statistic tasks, and netCDF output |
-| `configs/model_input.yaml` | Statistics-stage configuration template (see below) |
-| `scripts/run_verify_model.ksh` | PBS job script: loops over assimilation cycles, fills in the input config, runs the statistics stage, retries on failure |
-| `scripts/run_verify_model_fcst.ksh` | Same, for extended-forecast verification (writes to `f<HHH>/` subfolders) |
-| `src/mpas_stat/cli/model_graphics.py` | Graphics entry point: `python -m mpas_stat.cli.model_graphics -c configs/model_graphic.yaml` |
-| `src/mpas_stat/graphics/io.py` | Facade re-exporting cycle/date helpers (`core/timeutils.py`), bootstrap CI helpers (`core/bootstrap.py`), netCDF/path helpers (`graphics/ncread.py`) and the `collect_*` functions (`graphics/collect.py` for cycling, `graphics/collect_forecast.py` for extended forecasts) that read `mpasstat.<date>.nc` files back into plotting-ready Python dicts |
-| `src/mpas_stat/graphics/functions.py` | Facade re-exporting every plotting function and helper, now implemented in `style.py` (publication style, `_save_fig`), `axes.py`, `panels.py` (shared 2-D panel builder, colour maps, significance), `plots_0d.py`, `plots_1d.py`, `plots_2d.py` and `scorecard.py`. Contents: | All plotting functions (`plot_time_series_0d`, `plot_profiles_1d`, `plot_lat_lon_2d`, `plot_lat_vert_2d`, `plot_time_level_2d`, the `forecast_*` and scorecard variants) plus shared styling/colorbar/significance helpers |
-| `src/mpas_stat/graphics/driver.py` | `run_graphics(cfg)` — dispatches over `cfg["plot_types"]`, optionally in parallel (`n_workers`) |
-| `configs/model_graphic.yaml` | Graphics-stage configuration template (see below) |
-
-## 1.2 Running it
+## 1.1 Workflow
 
 ```bash
-# Statistics: one call per experiment x cycle (scripts/run_verify_model.ksh
-# loops this over a cycle range and fills in the config placeholders via sed
-# before each call)
+# 1. statistics: one run per experiment and cycle
 python -m mpas_stat.cli.model_stats -c configs/model_input.yaml
 
-# Graphics: one call reads back every cycle in the configured time range and
-# draws every figure listed in configs/model_graphic.yaml's plot_types
+# 2. figures: every experiment and cycle in the configured period
 python -m mpas_stat.cli.model_graphics -c configs/model_graphic.yaml
 ```
 
-`scripts/run_verify_model.ksh` is a PBS batch script; it templates the input
-config per cycle (`forecastFile`, `initFile`, `outputFile`, `nMember`,
-`nProcesses` placeholders) and writes output to:
+In production the statistics run is a PBS job:
 
-```
-<main_dir>/<exp_name>/VerifyModel/<cycle>/mpasstat.<date>.nc
-```
-
-`scripts/run_verify_model_fcst.ksh` does the same for extended-forecast runs,
-writing to `.../VerifyModel/<init_cycle>/f<HHH>/mpasstat.<valid_date>.nc`.
-
-## 1.3 `input.yaml` (statistics stage) — key fields
-
-| Key | Meaning |
-|---|---|
-| `forecast_file`, `init_file`, `output_file` | Paths (filled in per-cycle by the ksh driver) |
-| `n_member` | 1 = deterministic; >1 = ensemble mean/spread |
-| `variables` | Physical variables to verify (`U`, `V`, `T`, `Qv`, `U10`, `Ps`, ...) |
-| `lat_bin_width`, `lon_bin_width`, `level_bin_size` | Binning resolution for the 1-D/2-D/3-D gridded products |
-| `pres_levels`, `hgt_levels` | Target pressure/height levels for vertical interpolation |
-| `regions` | Named latitude-band regions (`Global`, `Tropics`, `NHem`, ...) statistics are averaged over |
-| `regional` | `true` limits the lat/lon binning box to the mesh's own extent instead of the full globe |
-| `n_processes` | Thread-pool width for the statistic tasks |
-| `statistics_method` | `weighted` (default) or `legacy` — see §5 |
-| `area_weighting`, `mass_weighting` | Weight cells by `areaCell` and model levels by layer pressure thickness (default `true`; `weighted` method only) — §5.1 |
-| `spread_ddof`, `spread_finite_ensemble_correction` | Ensemble spread definition (default `1`, `true`) — §5.3 |
-| `height_reference` | `msl` (default) or `agl`: whether `hgt_levels` are above sea level or above the model terrain |
-
-Variable names: `T` is temperature, `TH` potential temperature, `Tv` virtual
-temperature (before 2026-11, `Tv` mistakenly returned potential temperature).
-
-## 1.4 `graphic.yaml` (graphics stage) — key fields
-
-| Key | Meaning |
-|---|---|
-| `paths.base_dir` / `paths.out_dir` | Where to read `mpasstat.<date>.nc` from / write figures to |
-| `experiments.names/labels/colors/linestyles` | One entry per experiment being compared |
-| `time.start/end/interval_hours` | Assimilation-cycle range to read |
-| `variables`, `statistics` | Which variables and which stats (`rms`, `mean`, `std`, `spread`) to plot |
-| `region` | Which of `input.yaml`'s `regions` to plot (one region per run) |
-| `plot_types` | Which figures to generate — see §1.5 |
-| `forecast.*`, `scorecard.*`, `level_slices` | Extended-forecast / scorecard / 2-D-slice-specific settings |
-| `time_aggregation` | How cycles are combined: `pooled` (default) or `mean` — §5.2 |
-| `colorbar.discrete`, `colorbar.levels_diverging`, `colorbar.levels_sequential`, `colorbar.share` | 2-D colour scales: discrete colour levels at rounded values (default), roughly 20 (diverging) / 16 (sequential) bins, limits shared by every panel of a variable row (`share: row`, default) or per panel (`panel`). Diverging scales are symmetric with 0 on a level boundary. Explicit `relative_reduction_vmin/vmax`, `mean_vmin/vmax`, `absolute_vmin/vmax` still fix the limits. |
-| `plot_style.diverging_cmap`, `plot_style.absolute_cmap` | Colour maps for % differences / mean fields (default `RdBu_r`; `RdYlBu_r` is a good alternative) and for absolute statistics (default `YlGnBu`) |
-| `plot_style.palette` | Experiment line colours when `experiments.colors` is not given. Default: black, then ColorBrewer Dark2 (colour-vision-deficiency safe). Obs space: `plot_settings.palette`. |
-| `ci_style` | Bootstrap confidence intervals on line/profile plots: `shade` (coloured band, default), `errorbar`, or `none`. `ci_alpha` sets the band opacity. (Older `profile_ci_style` / `profile_errorbar: false` still work.) |
-| `map_extent` | Area shown by lat-lon maps and latitude axes (lat-vert cross-sections, latitude-binned Hovmöllers): `auto` (default) zooms to the cells that hold data in any panel of the figure, so a regional mesh or sub-domain fills the frame; `full` shows the whole grid; `[lat_min, lat_max, lon_min, lon_max]` fixes a box. A region crossing the dateline is drawn in one piece (map centred on 180°). Obs space: `plot_settings.map_extent`. |
-
-## 1.5 Available `plot_types` (model-space)
-
-| `plot_types` entry | Function | What it draws |
+| Script | Loops over | Writes |
 |---|---|---|
-| `time_series_0d` | `plot_time_series_0d` | Region-averaged statistic vs. assimilation cycle |
-| `profiles_1d` | `plot_profiles_1d` | Time-averaged vertical/latitude profile |
-| `profile_diff_1d` | `plot_profile_diff_1d` | Profile, plus bootstrap-significance vs. the reference experiment |
-| `time_level_2d` | `plot_time_level_2d` | Cycle × level Hovmöller |
-| `lat_vert_2d` | `plot_lat_vert_2d` | Latitude × vertical cross-section |
-| `lat_lon_2d` | `plot_lat_lon_2d` | Lat-lon map |
-| `lat_lon_slice_2d` | `plot_lat_lon_slice_2d` | Lat-lon map at one selected 3-D level |
-| `forecast_lead_0d`, `forecast_*` | various | Extended-forecast-lead counterparts of the above (need `forecast:` block) |
-| `forecast_scorecard` | `plot_forecast_scorecard` | Improve/degrade triangle scorecard vs. lead time |
+| `scripts/run_verify_model.ksh` | assimilation cycles | `<main_dir>/<exp>/VerifyModel/<cycle>/mpasstat.<date>.nc` |
+| `scripts/run_verify_model_fcst.ksh` | init cycles × forecast leads | `<main_dir>/<exp>/VerifyModel/<init>/f<HHH>/mpasstat.<valid>.nc` |
 
-## 1.6 `mpasstat.<date>.nc` schema
+Both copy `configs/model_input.yaml` for each run and fill in its
+placeholders (`forecastFile`, `initFile`, `outputFile`, `nMember`,
+`nProcesses`) with `sed`. Edit the `export` lines at the top of the script
+for your experiment, directories and cycle range.
 
-One file per experiment × cycle:
+## 1.2 Statistics configuration
+
+`configs/model_input.yaml` (full template: {doc}`/configuration`):
+
+| Key | Meaning |
+|---|---|
+| `forecast_file`, `init_file`, `output_file` | Input forecast, verifying analysis and output file (filled in by the PBS script) |
+| `n_member` | 1 for a deterministic run; above 1, the members' mean is verified and their spread written |
+| `variables` | Variables to verify: `U`, `V`, `T`, `TH`, `Tv`, `Qv`, `RH`, `Z`, `U10`, `Ps`, … |
+| `regions` | Named latitude bands for domain averages, e.g. `Global: [-90, 90]` |
+| `regional` | `true` limits the lat-lon grid to the mesh's own extent |
+| `lat_bin_width`, `lon_bin_width`, `level_bin_size` | Resolution of the latitude, lat-lon and model-level bins |
+| `pres_levels`, `hgt_levels` | Pressure and height levels to interpolate to |
+| `height_reference` | `msl` (default) or `agl`: heights above sea level or above the terrain |
+| `statistics_method` | `weighted` (default) or `legacy` (§5.1) |
+| `area_weighting`, `mass_weighting` | Weight cells by area and levels by layer mass (default `true`) |
+| `spread_ddof`, `spread_finite_ensemble_correction` | Ensemble spread definition (§5.3) |
+| `n_processes` | Threads for the statistics tasks |
+
+## 1.3 Graphics configuration
+
+`configs/model_graphic.yaml`:
+
+| Key | Meaning |
+|---|---|
+| `paths.base_dir`, `paths.out_dir` | Where the statistics files are, and where figures go |
+| `experiments.names`, `labels`, `colors`, `linestyles` | One entry per experiment. The **first is the reference** for every comparison |
+| `time.start`, `time.end`, `time.interval_hours` | Cycles to read |
+| `variables`, `statistics` | What to plot: `rms`, `mean`, `std`, `spread` |
+| `region` | Which of the statistics run's `regions` to plot |
+| `plot_types` | Which figures to draw (§1.4) |
+| `level_slices` | Levels for `lat_lon_slice_2d`, by model level, height or pressure |
+| `forecast` | `length`, `interval`, `start` of the forecast leads (for `forecast_*` types) |
+| `scorecard` | Rows and limits of `forecast_scorecard` |
+| `time_aggregation` | `pooled` (default) or `mean` (§5.2) |
+| `ci_style`, `ci_alpha` | Confidence intervals as `shade` (default), `errorbar` or `none` |
+| `map_extent` | `auto` (default) zooms maps and latitude axes to the data; `full`; or `[lat_min, lat_max, lon_min, lon_max]` |
+| `colorbar.*` | Discrete colour levels (default), number of levels, shared per row or per panel; explicit `*_vmin`/`*_vmax` limits |
+| `plot_style.*` | Fonts, colour maps (`diverging_cmap`, `absolute_cmap`) and line `palette` |
+| `n_workers` | Processes used to draw figures in parallel |
+
+## 1.4 Figures
+
+Each type is drawn per variable and statistic. Comparison figures show the
+percent difference from the first experiment, `100·(exp − ref)/ref`, so
+**negative is better** (§3.2).
+
+### Cycling
+
+**`time_series_0d`**: the region average by cycle.
+
+```{figure} ../gallery/model_time_series.png
+:width: 85%
+
+Region-averaged rms of the forecast against the verifying analysis, one
+panel per variable.
+```
+
+**`profiles_1d`**: the profile pooled over cycles, by pressure, height,
+model level or latitude, with bootstrap intervals.
+**`profile_diff_1d`**: the same as a percent difference from the reference,
+with ▲/▼ on significant levels.
+
+```{figure} ../gallery/model_profile.png
+:width: 85%
+
+`profiles_1d`: rms by pressure level.
+```
+
+```{figure} ../gallery/model_profile_reduction.png
+:width: 85%
+
+`profile_diff_1d`: rms percent difference from Control by pressure level.
+```
+
+**`lat_lon_2d`** (column statistics) and **`lat_lon_slice_2d`** (at the
+levels in `level_slices`): maps with the reference in full and the other
+experiments as percent differences, ▲/▼ on significant cells.
+
+```{figure} ../gallery/model_lat_lon.png
+:width: 60%
+
+`lat_lon_slice_2d`: rms at 500 hPa.
+```
+
+**`lat_vert_2d`**: latitude–level cross-sections (model level, height and
+pressure). **`time_level_2d`**: cycle–level sections, one value per cycle,
+so without significance markers.
+
+### Extended forecasts
+
+These need the `forecast` block and the `f<HHH>/` statistics files.
+
+| Type | Draws |
+|---|---|
+| `forecast_lead_0d` | Region average against lead, pooled over init cycles |
+| `forecast_lead_diff_0d` | The same as a percent difference from the reference |
+| `forecast_profiles_1d`, `forecast_profile_diff_1d` | Profiles at each lead |
+| `forecast_lat_lon_2d`, `forecast_lat_vert_2d` | Maps and cross-sections at each lead |
+| `forecast_time_level_2d` | Lead–level section, with significance |
+| `forecast_scorecard` | Triangle scorecard by variable, level and lead |
+
+```{figure} ../gallery/model_forecast_lead.png
+:width: 85%
+
+`forecast_lead_0d`: rms against lead, with bootstrap intervals; circles
+mark leads where the difference from Control is significant.
+```
+
+```{figure} ../gallery/model_forecast_lead_diff.png
+:width: 85%
+
+`forecast_lead_diff_0d`: the same as a percent difference from Control.
+```
+
+```{figure} ../gallery/model_forecast_scorecard.png
+:width: 55%
+
+`forecast_scorecard`: ▲ improvement, ▼ degradation; outlined triangles
+are significant, and size scales with the difference. Rows come from
+`scorecard.rows`.
+```
+
+## 1.5 Statistics file
+
+`mpasstat.<date>.nc`, one per experiment and cycle (and lead):
 
 ```
-<top level>
-  LatBins, LonBins, LevelBins, ModelLevels, HeightLevels, PressureLevels   (coordinate variables)
-  task_timing_seconds/, variable_timing_seconds/                          (perf diagnostics)
-
-  <variable>/                     e.g. U, V, T, Qv, Ps, ...
-    0D/<region>/                  e.g. Global, Tropics, NHem, ...
-        mean, rms, std, spread            (scalars)
-    1D/
-        lat_bin_profile/                          mean, rms, std, spread   (vs. LatBins)
-        vert_profile_<region>/                    mean, rms, std, spread   (vs. ModelLevels)
-        vert_bin_profile_<region>/                mean, rms, std, spread   (vs. LevelBins)
-        vert_hgt_profile_<region>/                mean, rms, std, spread   (vs. HeightLevels)
-        vert_pres_profile_<region>/               mean, rms, std, spread   (vs. PressureLevels)
-    2D/
-        lat_lon/, lat_lev/, lat_hgt/, lat_pres/    mean, rms, std, spread   (2-D grids)
-    3D/                            (3-D variables only, e.g. U/V/T/Qv, not U10/T2/Ps/...)
-        lat_lon_lev/, lat_lon_hgt/, lat_lon_pres/  mean, rms, std, spread   (3-D grids)
+LatBins, LonBins, LevelBins, ModelLevels, HeightLevels, PressureLevels    coordinates
+<variable>/                                       U, V, T, Qv, Ps, …
+    0D/<region>/                                  mean, rms, std, spread, weight
+    1D/lat_bin_profile/                           … by LatBins
+       vert_profile_<region>/                     … by ModelLevels
+       vert_bin_profile_<region>/                 … by LevelBins
+       vert_hgt_profile_<region>/                 … by HeightLevels
+       vert_pres_profile_<region>/                … by PressureLevels
+    2D/lat_lon/, lat_lev/, lat_hgt/, lat_pres/    2-D grids
+    3D/lat_lon_lev/, lat_lon_hgt/, lat_lon_pres/  3-D grids (3-D variables only)
+task_timing_seconds/, variable_timing_seconds/    run times
 ```
 
-`spread` only appears when `n_member > 1`. `region` names come from
-`input.yaml`'s `regions` map. With `statistics_method: weighted` (the
-default) every group also holds `weight`, the total sample weight behind
-its statistics (area × layer mass, summed over valid samples), which the
-graphics stage uses to pool cycles (§5.2).
+`spread` is present only when `n_member > 1`. `weight` (the summed area ×
+layer-mass weight of the valid samples) is written by the `weighted`
+method and used to pool cycles.
 
+## 1.6 Code map
 
+| Module | Role |
+|---|---|
+| `mpas_stat.cli.model_stats`, `model_graphics` | Command-line entry points |
+| `mpas_stat.model.config`, `args` | Configuration schema and command-line overrides |
+| `mpas_stat.model.variables` | Derives `U`, `T`, `RH`, … with units from raw MPAS fields |
+| `mpas_stat.model.interp` | Vertical interpolation to height and pressure (numba-accelerated when available) |
+| `mpas_stat.model.kernels` | Statistics kernels: region means, profiles, 2-D and 3-D bins |
+| `mpas_stat.model.driver` | Loads, interpolates, runs the statistics tasks, writes the file |
+| `mpas_stat.graphics.collect`, `collect_forecast`, `ncread` | Read statistics files back and pool cycles |
+| `mpas_stat.graphics.plots_0d`, `plots_1d`, `plots_2d`, `scorecard` | The figures |
+| `mpas_stat.graphics.driver` | Turns `plot_types` into figure jobs, optionally in parallel |

@@ -122,6 +122,15 @@ two Desroziers estimates (top row) and two ratios (bottom row):
 - **Consistency ratio** TotalSpread / RMS(OMB) (ensemble runs). Below 1:
   the ensemble is under-dispersive; above 1: over-dispersive.
 
+```{figure} ../gallery/obs_error_consistency.png
+:width: 100%
+
+Radiosondes. Top: the assumed σo with the Desroziers σo and σb
+estimates. Bottom: Desroziers σo / assumed σo and total spread / RMS(OMB);
+both should be near 1. Here the
+assumed wind error is too large near the surface and too small aloft.
+```
+
 The Desroziers estimates are exact only when the analysis used the correct
 error statistics; treat them as a consistency check, not a tuning answer
 (Desroziers et al. 2005, *QJRMS* 131, 3385–3396). Values are written only by
@@ -206,6 +215,21 @@ All of these quantities add across cycles. The figures are drawn when
   per group; points above the 1:1 line mean the spread is too small for the
   error.
 
+```{figure} ../gallery/obs_rank_histogram.png
+:width: 80%
+
+Radiosonde rank histograms, 10 members. Near flat, slightly domed for
+winds: the spread is a little too large.
+```
+
+```{figure} ../gallery/obs_spread_skill.png
+:width: 75%
+
+Spread–skill for the same ensemble. Points fall below the diagonal at
+large spread: where the ensemble is most spread out, it over-estimates
+the error.
+```
+
 The total spread includes the assumed observation error, so a mis-specified
 observation error (see §5.6) shows up here too. Read the two diagnostics
 together.
@@ -233,6 +257,21 @@ They are pooled over cycles with their own counts. Figures go to
   the share of |z| > 3 together with its Gaussian value.
 - **`normdep_<profile>`:** the RMS (top row) and mean (bottom row) of the
   normalized departures by level.
+
+```{figure} ../gallery/obs_normdep_hist.png
+:width: 85%
+
+Radiosonde (O−B)/σo for both experiments (solid) and (O−B)/total spread
+for the ensemble (dashed), against Gaussians with the same RMS (dotted).
+The statistics in each panel give the RMS, mean and share beyond 3σ.
+```
+
+```{figure} ../gallery/obs_normdep_profile.png
+:width: 100%
+
+The same by pressure: RMS (top) and mean (bottom) of the normalized
+departures.
+```
 
 How to read them:
 
@@ -273,6 +312,14 @@ These are pooled over cycles, weighted by count.
   the correlation matrix of the symmetrized R (top) and of B (bottom), one
   column per experiment. The title gives the smallest eigenvalue of R. It is
   switched by `plot_settings.generate_channel_correlations`.
+
+  ```{figure} ../gallery/obs_channel_corr.png
+  :width: 75%
+
+  AMSU-A channels 5–9: correlations of the estimated observation error
+  (top) and background error (bottom). The synthetic data have
+  uncorrelated errors, so the off-diagonal values are near zero.
+  ```
 - **Export** `<diag_dir>/<exp>/VerifyOBS/ObsErrorEstimates/desroziers_R_<sensor>_<cycles>.{csv,yaml}`
   (global domain): channels, σ per channel and the correlation matrix, so that
   R = diag(σ) · C · diag(σ). The files also give the smallest eigenvalue and
