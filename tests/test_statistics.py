@@ -1086,3 +1086,27 @@ class TestVirtualTemperature(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMapFigureSize(unittest.TestCase):
+    """Map rows are sized to the map, so colour bars match the map height."""
+
+    def setUp(self):
+        from mpas_stat.graphics.plots_2d import _map_figsize, MAP_ROW_SPACE, MAP_WIDTH
+        self.size, self.row_space, self.width = _map_figsize, MAP_ROW_SPACE, MAP_WIDTH
+        self.cartopy = {"has_cartopy": True}
+
+    def test_global_rows_fit_the_map(self):
+        w, h = self.size(4, 2, (-90, 90), (-180, 180), self.cartopy)
+        # 2:1 globe: map height is half the map width, plus title/label space
+        self.assertAlmostEqual(h / 4, self.width / 2 + self.row_space)
+        self.assertLess(h / 4, 3.5)      # shorter than the old fixed 3.5 in
+
+    def test_tall_domain_is_capped(self):
+        from mpas_stat.graphics.plots_2d import MAP_MAX_HEIGHT
+        w, h = self.size(1, 1, (0, 60), (0, 10), self.cartopy)
+        self.assertAlmostEqual(h, MAP_MAX_HEIGHT + self.row_space)
+        self.assertLess(w, 5.0)
+
+    def test_without_cartopy_keeps_fixed_size(self):
+        self.assertEqual(self.size(2, 3, (-90, 90), (-180, 180), None), (15.0, 7.0))
