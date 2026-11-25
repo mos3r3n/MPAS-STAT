@@ -6,6 +6,7 @@ from ..radar.diag import main as _main
 
 
 def main() -> None:
+    """Command ``mpas-stat-radar``: compute radar reflectivity statistics with MET."""
     parser = argparse.ArgumentParser(
         description="Compute radar composite-reflectivity statistics."
     )

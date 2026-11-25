@@ -242,6 +242,7 @@ def get_obs_config(diag_obs: str) -> ObservationConfig:
     raise ValueError(f"No ObservationConfig found for {diag_obs}")
 
 def get_bin_method(diag_obs: str) -> int:
+    """Profile coordinate of a sensor: ``PRESSURE``, ``HEIGHT`` or ``LATITUDE``."""
     return get_obs_config(diag_obs).bin_method
 
 def source_obs_name(diag_obs: str) -> str:

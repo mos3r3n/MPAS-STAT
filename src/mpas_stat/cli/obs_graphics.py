@@ -6,6 +6,7 @@ from ..obs.plot import main as _main
 
 
 def main() -> None:
+    """Command ``mpas-stat-obs-plot``: draw observation-space figures, scorecards and error tables."""
     parser = argparse.ArgumentParser(
         description="Draw observation-space OMB/OMA/OMF figures."
     )

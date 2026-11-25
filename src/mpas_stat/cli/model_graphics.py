@@ -7,11 +7,13 @@ from ..graphics.driver import run_graphics
 
 
 def load_config(config_file):
+    """Read a YAML configuration file."""
     with open(config_file, "r") as f:
         return yaml.safe_load(f)
 
 
 def main():
+    """Command ``mpas-stat-graphics``: draw model-space figures from ``-c graphic.yaml``."""
     parser = argparse.ArgumentParser(
         description="Plot MPAS diagnostic statistics"
     )

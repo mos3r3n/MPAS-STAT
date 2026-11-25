@@ -6,6 +6,7 @@ from ..obs.diag import main as _main
 
 
 def main() -> None:
+    """Command ``mpas-stat-obs``: compute observation-space statistics files."""
     parser = argparse.ArgumentParser(
         description="Compute observation-space OMB/OMA/OMF statistics."
     )

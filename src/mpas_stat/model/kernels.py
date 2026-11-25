@@ -1,3 +1,11 @@
+"""Model-space statistics kernels.
+
+:func:`calculate_statistics_one_task_weighted` computes every product of
+one variable with area and mass weights (the default ``weighted``
+method). The ``compute_*`` functions and
+:func:`calculate_statistics_one_task` implement the ``legacy`` method.
+"""
+
 import numpy as np
 from typing import Dict, Tuple, Any, Optional
 
@@ -164,6 +172,7 @@ def compute_0d_regions(
     regions: Dict[str, Tuple[float, float]],
     is_3d: bool,
 ) -> Dict[str, Dict[str, float]]:
+    """Legacy method: mean, RMS, STD (and spread) of ``diff`` in each latitude region."""
     results = {}
 
     for region_name, (lat_min_r, lat_max_r) in regions.items():
@@ -197,6 +206,7 @@ def compute_1d_lat_bin_profile(
     lat_bins: np.ndarray,
     is_3d: bool,
 ) -> Dict[str, np.ndarray]:
+    """Legacy method: statistics of ``diff`` in each latitude bin."""
     nlat = len(lat_bins) - 1
     stats = make_stat_dict((nlat,), spread is not None)
 
@@ -223,6 +233,7 @@ def compute_1d_vert_profile(
     lat: np.ndarray,
     regions: Dict[str, Tuple[float, float]],
 ) -> Dict[str, Dict[str, np.ndarray]]:
+    """Legacy method: statistics on each model level, per region."""
     return _regional_column_profiles(diff, spread, lat, diff.shape[1], regions, "vert_profile")
 
 
@@ -233,6 +244,7 @@ def compute_1d_vert_bin_profile(
     level_bins: np.ndarray,
     regions: Dict[str, Tuple[float, float]],
 ) -> Dict[str, Dict[str, np.ndarray]]:
+    """Legacy method: statistics in bins of model levels, per region."""
     nLevelBins = len(level_bins) - 1
     results = {}
 
@@ -264,6 +276,7 @@ def compute_1d_vert_hgt_profile(
     hgt_levels: np.ndarray,
     regions: Dict[str, Tuple[float, float]],
 ) -> Dict[str, Dict[str, np.ndarray]]:
+    """Legacy method: statistics on each height level, per region."""
     return _regional_column_profiles(diff_hgt, sprd_hgt, lat, len(hgt_levels), regions, "vert_hgt_profile")
 
 
@@ -274,6 +287,7 @@ def compute_1d_vert_pres_profile(
     pres_levels: np.ndarray,
     regions: Dict[str, Tuple[float, float]],
 ) -> Dict[str, Dict[str, np.ndarray]]:
+    """Legacy method: statistics on each pressure level, per region."""
     return _regional_column_profiles(diff_pres, sprd_pres, lat, len(pres_levels), regions, "vert_pres_profile")
 
 
@@ -285,6 +299,7 @@ def compute_2d_lat_lon(
     lon_bins: np.ndarray,
     is_3d: bool,
 ) -> Dict[str, np.ndarray]:
+    """Legacy method: statistics in latitude × longitude bins (column mean for 3-D fields)."""
     nlat = len(lat_bins) - 1
     nlon = len(lon_bins) - 1
     ngroups = nlat * nlon
@@ -312,6 +327,7 @@ def compute_2d_lat_lev(
     lat_bins: np.ndarray,
     level_bins: np.ndarray,
 ) -> Dict[str, np.ndarray]:
+    """Legacy method: statistics in latitude × model-level bins."""
     nlat = len(lat_bins) - 1
     nLevelBins = len(level_bins) - 1
 
@@ -342,6 +358,7 @@ def compute_2d_lat_hgt(
     lat_bins: np.ndarray,
     hgt_levels: np.ndarray,
 ) -> Dict[str, np.ndarray]:
+    """Legacy method: statistics by latitude bin and height level."""
     return _grouped_column_stats(diff_hgt, sprd_hgt, lat_idx, (len(lat_bins) - 1,), len(hgt_levels))
 
 
@@ -352,6 +369,7 @@ def compute_2d_lat_pres(
     lat_bins: np.ndarray,
     pres_levels: np.ndarray,
 ) -> Dict[str, np.ndarray]:
+    """Legacy method: statistics by latitude bin and pressure level."""
     return _grouped_column_stats(diff_pres, sprd_pres, lat_idx, (len(lat_bins) - 1,), len(pres_levels))
 
 
@@ -400,6 +418,7 @@ def compute_3d_lat_lon_hgt(
     lon_bins: np.ndarray,
     hgt_levels: np.ndarray,
 ) -> Dict[str, np.ndarray]:
+    """Legacy method: statistics by latitude, longitude and height level."""
     return _grouped_column_stats(diff_hgt, sprd_hgt, group_ids_latlon,
                                  (len(lat_bins) - 1, len(lon_bins) - 1), len(hgt_levels))
 
@@ -412,6 +431,7 @@ def compute_3d_lat_lon_pres(
     lon_bins: np.ndarray,
     pres_levels: np.ndarray,
 ) -> Dict[str, np.ndarray]:
+    """Legacy method: statistics by latitude, longitude and pressure level."""
     return _grouped_column_stats(diff_pres, sprd_pres, group_ids_latlon,
                                  (len(lat_bins) - 1, len(lon_bins) - 1), len(pres_levels))
 

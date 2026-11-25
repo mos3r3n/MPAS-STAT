@@ -1,3 +1,5 @@
+"""Configuration of the model-space statistics stage (:class:`MPASConfig`), loaded from ``configs/model_input.yaml``."""
+
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 import yaml

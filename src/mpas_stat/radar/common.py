@@ -148,6 +148,7 @@ def default_embed_script_path() -> str:
 # Statistical helpers
 # ============================================================================
 def remove_outliers(data, threshold=3):
+    """Finite values of ``data`` within ``threshold`` standard deviations of their mean."""
     data = np.asarray(data)
     clean = data[np.isfinite(data)]
     if clean.size == 0:

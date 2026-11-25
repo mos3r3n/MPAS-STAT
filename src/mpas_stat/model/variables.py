@@ -1,3 +1,5 @@
+"""Derived MPAS variables (``U``, ``V``, ``T``, ``TH``, ``Tv``, ``Qv``, ``RH``, ``Z``, ``Ps``, …) with units, computed from the raw netCDF fields."""
+
 import numpy as np
 from netCDF4 import Dataset
 

@@ -23,6 +23,11 @@ def safe_nanpercentile(a, q, axis=0):
 # Bootstrap settings  (single authoritative location)
 # ---------------------------------------------------------------------------
 def get_bootstrap_settings(cfg):
+    """Return the ``bootstrap`` settings of ``cfg`` with defaults.
+
+    Keys: ``n_boot`` (1000), ``ci`` (95, percent), ``seed`` (0) and
+    ``plot_significance`` (true).
+    """
     bcfg = cfg.get("bootstrap", {})
     return {
         "n_boot":             int(bcfg.get("n_boot", 1000)),
@@ -36,6 +41,12 @@ def get_bootstrap_settings(cfg):
 # Bootstrap statistics
 # ---------------------------------------------------------------------------
 def bootstrap_mean_ci(samples, n_boot=1000, ci=95, seed=0):
+    """Mean over axis 0 with a bootstrap confidence interval.
+
+    Resamples the rows (cycles) of ``samples`` with replacement ``n_boot``
+    times. Returns ``(mean, ci_low, ci_high)``; the interval is NaN with
+    fewer than two rows.
+    """
     samples = np.asarray(samples, dtype=np.float64)
     ntime   = samples.shape[0]
     mean    = safe_nanmean(samples, axis=0)
