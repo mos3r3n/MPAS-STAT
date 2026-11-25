@@ -27,6 +27,15 @@ An optional radar composite-reflectivity product lives in
 and is documented in [`docs/guide/radar.md`](docs/guide/radar.md); the original all-Python standalone
 script is kept under `legacy/` for reference.
 
+<p align="center">
+  <img src="docs/gallery/obs_profile_diff.png" width="24%" alt="O-B rms percent difference profile">
+  <img src="docs/gallery/obs_lat_lon.png" width="24%" alt="O-B rms map">
+  <img src="docs/gallery/obs_rank_histogram.png" width="24%" alt="rank histogram">
+  <img src="docs/gallery/model_forecast_lead.png" width="24%" alt="rms against forecast lead">
+</p>
+
+More in the [figure gallery](docs/gallery.md).
+
 ## Requirements
 
 - Python 3.9 or newer
@@ -217,6 +226,7 @@ pip install -e ".[docs]"
 sphinx-build -b html docs docs/_build/html   # open docs/_build/html/index.html
 ```
 
+A [figure gallery](docs/gallery.md) shows what each product looks like.
 The guide pages are plain Markdown and also read well on GitHub:
 [overview](docs/guide/overview.md) ·
 [model space](docs/guide/model_space.md) ·

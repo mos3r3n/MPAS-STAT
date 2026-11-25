@@ -4,6 +4,7 @@ Ready-to-adapt configurations for common tasks. Each starts with a header
 that says what it is for, how to run it and which output to look at first.
 Replace the `/path/to/...` values and experiment names, then run.
 `tests/test_examples.py` loads every file, so they stay in step with the code.
+The {doc}`gallery` shows the figures they produce.
 
 ## Observation space
 

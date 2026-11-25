@@ -52,6 +52,8 @@ cycle). `*_graphic_*.yaml` files are for `mpas-stat-graphics` [model_graphics].
 
 ## Where the settings are explained
 
+- What the figures look like: [`docs/gallery.md`](../docs/gallery.md).
+
 - All statistics methods and diagnostics: [`docs/guide/methods.md`](../docs/guide/methods.md)
   (§5.6 Desroziers, §5.7 ensemble reliability).
 - Obs-space options, scorecard, error tables: [`docs/guide/obs_space.md`](../docs/guide/obs_space.md).

@@ -13,8 +13,8 @@ product — with one shared graphics engine.
 
 Both pipelines have two stages: a **statistics stage** writes one netCDF
 diagnosis file per experiment and cycle, and a **graphics stage** reads
-them back and draws the figures. Start with {doc}`installation` and
-{doc}`quickstart`, or pick a ready-made configuration from {doc}`examples`.
+them back and draws the figures. See what it draws in the {doc}`gallery`, start with
+{doc}`installation` and {doc}`quickstart`, or pick a ready-made configuration from {doc}`examples`.
 
 ```{toctree}
 :maxdepth: 2
@@ -22,6 +22,7 @@ them back and draws the figures. Start with {doc}`installation` and
 
 installation
 quickstart
+gallery
 examples
 ```
 
