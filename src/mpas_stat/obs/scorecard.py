@@ -1,23 +1,24 @@
 """Observation-space scorecard: every sensor, variable and level on one page.
 
-For each experiment compared with the reference (experiments.names[0]) one
-figure is drawn per diagnostic type (OMB for cycling experiments, OMF for
-extended forecasts):
+One figure per experiment compared with the reference
+(``experiments.names[0]``) and per diagnostic (O−B for cycling
+experiments, O−F for extended forecasts):
 
-  rows     sensor / variable / level ("all" = the whole column, then each
-           pressure or height bin from the top down; radiances: one row
-           per channel)
-  columns  statistic x domain (x forecast lead for OMF)
-  colour   percent difference 100 * (exp - ref) / ref of the cycle-pooled
-           statistic -- negative (blue) = smaller error than the reference
-  marker   ▲ significantly better, ▼ significantly worse: the paired
-           bootstrap confidence interval over cycles excludes 0 (same test
-           as the other comparison figures, bootstrap.* settings)
+rows
+    Sensor / variable / level: ``all`` (the whole column), then each
+    pressure or height bin from the top down; one row per channel for
+    radiances.
+columns
+    Statistic × domain (× forecast lead for O−F).
+colour
+    Percent difference ``100 * (exp - ref) / ref`` of the cycle-pooled
+    statistic; negative (blue) means a smaller error than the reference.
+marker
+    ▲ significantly better, ▼ significantly worse: the paired bootstrap
+    interval over cycles excludes 0 (``bootstrap.*`` settings).
 
 A CSV with every cell (difference, interval, counts) is written next to
-the figure. Configured by plot_settings.scorecard (see
-docs/USER_GUIDE.md); written once for all sensors after the per-sensor
-figures.
+the figure. Configured by ``plot_settings.scorecard``.
 """
 import csv
 import os

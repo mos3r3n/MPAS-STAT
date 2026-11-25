@@ -62,10 +62,10 @@ plot_settings:
   # palette: [black, "#d95f02", "#7570b3", "#1b9e77"]   # line colours (default: CVD-safe)
   generate_time_level_2d: true
   generate_lat_vert_2d: true
-  generate_normalized_departures: true
-  generate_channel_correlations: true   # radiances: inter-channel error correlations  # normalized-departure histograms and profiles
-  generate_ensemble_diagnostics: true   # rank histograms / spread-skill (ensembles)
-  generate_error_consistency: true   # Desroziers / spread-consistency profiles
+  generate_normalized_departures: true # normalized-departure histograms and profiles
+  generate_channel_correlations: true  # radiances: inter-channel error correlations
+  generate_ensemble_diagnostics: true  # rank histograms / spread-skill (ensembles)
+  generate_error_consistency: true     # Desroziers / spread-consistency profiles
   scorecard:                         # one-page summary per experiment (false = off)
     statistics: [RMS]
     levels: null                     # e.g. [850, 500, 250]

@@ -1,106 +1,37 @@
 #!/usr/bin/env python3
-"""
-Shared computation kernels and configuration for radar composite-
-reflectivity forecast verification (FSS / categorical scores / performance
-diagram / RMSE vs. forecast lead time), used by BOTH:
-  - src/mpas_stat/radar/diag.py  (statistics stage: reads HofX obsout HDF5,
-                                  grids obs/hofx composite reflectivity, and
-                                  writes one diagnosis netCDF file per
-                                  (experiment, init cycle, forecast lead))
-  - src/mpas_stat/radar/plot.py  (graphics stage: reads those diagnosis
-                                  files back, aggregates across init cycles,
-                                  and draws figures)
+"""Shared kernels and configuration for radar composite-reflectivity
+verification (FSS, categorical scores, performance diagram and RMSE
+against forecast lead), used by :mod:`mpas_stat.radar.diag` (statistics)
+and :mod:`mpas_stat.radar.plot` (figures).
 
-This module is the radar product's counterpart of src/mpas_stat/obs/common.py's role
-for the point-wise obs-space pipeline: one place for the math and config
-conventions both pipeline stages must agree on, with no plotting or HDF5-
-obs-reading orchestration of its own (src/mpas_stat/radar/diag.py owns the
-HDF5 read + diagnosis-file write; src/mpas_stat/radar/plot.py owns the
-diagnosis-file read + figures).
+How a cycle is scored
+---------------------
+:func:`process_one_cycle` grids the observed and forecast composite
+reflectivity onto a regular lat-lon grid and computes RMSE in Python. It
+then writes both fields to a small ``.npz`` cache, builds a METplus
+GridStat configuration whose ``FCST_VAR1_NAME`` / ``OBS_VAR1_NAME`` call
+:mod:`mpas_stat.radar.metplus_embed` on that cache, and runs
+``run_metplus.py`` for that one experiment, init cycle and lead.
 
-============================================================================
-METplus / grid_stat integration (replaces the native FSS/categorical
-scoring kernels this module used to carry -- see "REMOVED" note below)
-============================================================================
-Per an explicit decision to integrate with METplus: per-cycle FSS and
-categorical (TS/ETS/FBIAS/POD/FAR) neighborhood scores are now computed by
-MET's grid_stat tool (invoked through the METplus GridStat wrapper,
-`run_metplus.py`), not by this module's own convolution/uniform_filter
-kernels. This is a FULL replacement for this (integrated, config-driven)
-product -- the standalone radar_reflectivity_verify.py script this product
-was originally lifted from is explicitly NOT touched by this change and
-keeps its own independent, original native-kernel implementation.
+GridStat writes the NBRCTC (neighbourhood contingency counts), NBRCTS
+(CSI, GSS, FBIAS, PODY, FAR) and NBRCNT (FBS, FSS) line types, each also
+to its own ``.txt`` file, which is parsed by column name. The combined
+``.stat`` file is kept for your own ``stat_analysis`` use.
 
-REMOVED in this revision (previously lived in this module, now gone):
-calc_fss_components(), calc_fss(), _circular_kernel(), _categorical_
-counts(), calc_categorical_counts(), _scores_from_counts(),
-calc_categorical_scores(). calc_composite_reflectivity() (the scattered-
-obs-to-grid step), remove_outliers() and calc_confidence_bootstrap() are
-UNCHANGED and still used exactly as before -- gridding scattered obs/hofx
-reflectivity onto a regular lat/lon grid is still done natively in Python
-(once, per cycle), and the cross-cycle bootstrap/aggregation in
-aggregate_radar_cycles() below is ALSO unchanged (see why below).
+Pooling over cycles
+-------------------
+:func:`aggregate_radar_cycles` pools in Python: contingency counts are
+summed, and FSS is pooled by summing the numerator and denominator
+recovered from each cycle's FBS/FSS before taking one ratio. MET's
+``stat_analysis`` has no documented aggregation from NBRCNT to FSS, so it
+is not used for this step.
 
-Design, in one paragraph: process_one_cycle() still grids obs/hofx
-reflectivity natively (unchanged) and still computes RMSE natively
-(unchanged -- RMSE is a simple, unambiguous quantity and was judged out of
-scope for "replace the FSS/categorical kernels"; it is not delegated to
-MET's CNT line type). It then writes that one cycle's gridded obs/fcst
-fields to a small scratch .npz cache file (_write_metplus_npz_cache()),
-generates a per-cycle METplus GridStat conf (_build_gridstat_conf()) that
-points FCST_VAR1_NAME/OBS_VAR1_NAME at src/mpas_stat/radar/metplus_embed.py (a MET
-Python-embedding script that just loads that one cache file back), and
-invokes `run_metplus.py` on it via subprocess -- one invocation per cycle,
-scoped to exactly that (experiment, init, lead) triple (INIT_BEG=INIT_END,
-LEAD_SEQ=<one lead>), running inside the SAME ProcessPoolExecutor-based
-per-cycle parallelism src/mpas_stat/radar/diag.py already used. This
-deliberately avoids depending on METplus's own filename-into-script-
-argument templating (never confirmed with certainty against documentation
-during integration) -- the cache file's path is always a literal, fully-
-resolved path this module built itself.
-
-grid_stat is configured to emit NBRCTC (neighborhood categorical counts:
-FY_OY/FY_ON/FN_OY/FN_ON, mapping directly to this module's existing na/nb/
-nc/nd), NBRCTS (neighborhood categorical scores: CSI/GSS/FBIAS/PODY/FAR,
-mapping to this module's existing ts/ets/fbias/pod/far) and NBRCNT
-(neighborhood continuous scores: FBS/FSS/TOTAL) line types, each with
-GRID_STAT_OUTPUT_FLAG_*=BOTH so MET writes BOTH the combined ASCII `.stat`
-file (kept on disk per cycle for provenance / the user's own independent
-stat_analysis use) AND a dedicated, self-describing per-line-type `.txt`
-file with its own correctly-named header row -- this module parses ONLY
-those dedicated files, by column NAME, never by position (MET's combined
-`.stat` file is NOT self-describing past its common columns -- columns
-after LINE_TYPE are positional per line type -- which is why the dedicated
-files, not the combined one, are this module's parsing target).
-
-IMPORTANT cross-cycle aggregation note (why aggregate_radar_cycles() did
-NOT need to change): MET's `stat_analysis -job aggregate_stat -line_type
-NBRCTC -out_line_type NBRCTS` is a documented, correct way to combine
-categorical counts across cases -- but NBRCNT (FSS) has NO documented
-aggregate_stat conversion; it is only listed under the separate, generic
-"-job aggregate" job, whose exact combination semantics for NBRCNT were
-NOT confirmable with confidence against the MET User's Guide during this
-integration. Rather than depend on that undocumented behavior, cross-cycle
-FSS pooling keeps happening in THIS module's own code, exactly as before
-(sum fss_num/fss_denom accumulator components across cycles, then take one
-ratio -- see aggregate_radar_cycles()) -- just fed by fss_num/fss_denom
-values _parse_nbrcnt() below back-derives from MET's own per-cycle FBS/
-FSS/TOTAL numbers instead of the old native kernel's. This is also why
-process_one_cycle()'s return contract did not need to change shape at all
-(see that function's docstring) -- MET only replaced what feeds it.
-
-ASSUMPTION flagged for on-system validation: this integration was
-developed and unit-tested in a sandbox with NO MET/METplus installation
-available, so none of the grid_stat invocation, conf-file keys, or MET
-ASCII output parsing could be exercised against a real MET build -- only
-against fabricated/synthetic stand-ins for MET's output (see
-test_radar_metplus_integration.py). Everything here was written against
-the documented METplus GridStat conf keys and MET Python-embedding/ASCII-
-output conventions, but please run a single-cycle dry run on your own
-system (with your real run_metplus.py / MET install) before trusting
-results, and check src/mpas_stat/radar/metplus_embed.py's own docstring for the one
-MET Python-embedding behavior (NaN == missing data) this integration
-relies on most and could not verify directly.
+.. note::
+   The MET integration was written against the documented GridStat
+   settings and output format and tested with synthetic MET output. Run a
+   single cycle with your own MET installation before relying on the
+   scores; see :mod:`mpas_stat.radar.metplus_embed` for the one behaviour
+   to check first.
 """
 import glob
 import os

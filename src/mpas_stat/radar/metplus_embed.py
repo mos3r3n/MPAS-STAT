@@ -1,54 +1,32 @@
 #!/usr/bin/env python3
-"""
-MET Python-embedding script for the radar composite-reflectivity /
-METplus grid_stat integration (see src/mpas_stat/radar/common.py's
-process_one_cycle() and its module docstring for the full design).
+"""MET Python-embedding script for the radar GridStat run.
 
-grid_stat invokes this script TWICE per cycle -- once to supply the
-forecast field, once for the observation field -- via a command line
-built from the METplus conf's FCST_VAR1_NAME / OBS_VAR1_NAME
-(mpas_stat.radar.common._build_gridstat_conf() sets those to the literal
-command below), e.g.:
+GridStat runs it twice per cycle, once for the forecast and once for the
+observations, through the commands that
+:func:`mpas_stat.radar.common._build_gridstat_conf` puts in
+``FCST_VAR1_NAME`` / ``OBS_VAR1_NAME``::
 
-    python3 src/mpas_stat/radar/metplus_embed.py /scratch/.../data.npz FCST
-    python3 src/mpas_stat/radar/metplus_embed.py /scratch/.../data.npz OBS
+    python3 metplus_embed.py /scratch/.../data.npz FCST
+    python3 metplus_embed.py /scratch/.../data.npz OBS
 
-It must set two names at MODULE scope before it exits -- MET's Python
-embedding support reads them directly out of this script's namespace, not
-from a return value or stdout:
-  met_data : 2-D numpy.ndarray (float64) -- the gridded field.
-  attrs    : dict -- metadata MET needs to treat met_data as a proper
-             gridded field: valid, init, lead, accum, name, long_name,
-             level, units, grid (grid itself a dict describing a regular
-             LatLon grid -- see below).
+It loads the cache written by
+:func:`mpas_stat.radar.common._write_metplus_npz_cache` and sets two
+module-level names, which MET reads from the script's namespace:
 
-Deliberately minimal: this script does NOT grid anything itself, does NOT
-know any real file paths (HofX obsout files, diagnosis files, etc.), and
-does NOT do any date/time arithmetic of its own -- every value below was
-already computed, once, by mpas_stat.radar.common._write_metplus_npz_cache()
-in the orchestrating process (which already has the real datetimes and
-grid spacing in hand from gridding the cycle). This script's only job is
-to load that one cache file back and present it the way MET expects. That
-is a deliberate design choice -- see process_one_cycle()'s module
-docstring -- to avoid depending on METplus's own filename-into-script-
-argument templating conventions, which were not confirmed with certainty
-against documentation during this integration: the only things this
-script depends on from its own command line are the two plain positional
-arguments below (a literal, fully-resolved cache path, and a role flag),
-nothing METplus-templated.
+``met_data``
+    2-D ``float64`` array, the gridded field.
+``attrs``
+    Metadata dict: ``valid``, ``init``, ``lead``, ``accum``, ``name``,
+    ``long_name``, ``level``, ``units`` and ``grid`` (a regular lat-lon
+    grid description).
 
-ASSUMPTION flagged for on-system validation -- please check this first if
-results look wrong (e.g. the whole domain scoring as missing, or missing
-cells being scored instead of skipped): no MET/METplus installation was
-available in the sandbox this integration was developed in, so this
-script could not be run inside an actual grid_stat invocation. It is
-written on the documented assumption that MET's Python embedding treats a
-non-finite (NaN) met_data value as missing/bad data -- matching how
-calc_composite_reflectivity() already marks "no observation fell in this
-grid cell" -- but that specific behavior could not be exercised against a
-real MET build here. A single-cycle dry run on your own system (real
-run_metplus.py, real MET) is the one step of this whole integration most
-worth doing before trusting results.
+It does no gridding or date arithmetic of its own; everything comes from
+the cache.
+
+.. note::
+   Grid cells with no observation are NaN, on the assumption that MET's
+   Python embedding treats NaN as missing data. Check this first if a
+   whole domain scores as missing, or if empty cells are being scored.
 """
 import sys
 

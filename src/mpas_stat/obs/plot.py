@@ -1,12 +1,11 @@
-"""Observation-space verification -- GRAPHICS stage (entry point).
+"""Observation-space verification: graphics entry point.
 
-Backwards-compatible facade. The implementation is split into:
-  obs.collect      -- read obs-space diagnosis netCDF files back into the
-                      dicts the shared plot_* functions expect
-  obs.experiments  -- experiment lists / colours / cfg dicts for plotting
-  obs.figures      -- generate_*_graphics job builders and main()
+Kept for backwards compatibility; the implementation is in
+:mod:`~mpas_stat.obs.collect` (reads diagnosis files),
+:mod:`~mpas_stat.obs.experiments` (experiment lists, colours) and
+:mod:`~mpas_stat.obs.figures` (figure jobs, ``main``).
 
-Run with:  python -m mpas_stat.cli.obs_graphics <config.yaml>
+Run with ``python -m mpas_stat.cli.obs_graphics <config.yaml>``.
 """
 from .collect import (
     collect_obs_stats_0d,

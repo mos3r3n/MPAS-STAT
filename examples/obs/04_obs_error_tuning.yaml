@@ -16,7 +16,7 @@
 #   <diag_dir>/<exp>/VerifyOBS/ObsErrorEstimates/desroziers_<sensor>_<cycles>.yaml
 #   <graphic_dir>/<sensor>/error_consistency_1d/   (ratio < 1: error too large)
 #   <graphic_dir>/<sensor>/normalized_departure/   (tails beyond the Gaussian: QC)
-# Iterate: apply, re-run the DA, diagnose again. docs/USER_GUIDE.md section 5.6.
+# Iterate: apply, re-run the DA, diagnose again. docs/guide/methods.md §5.6.
 # =============================================================================
 
 paths:

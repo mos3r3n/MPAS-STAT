@@ -40,10 +40,10 @@ def get_mpasstat_file(base_dir, exp_name, cycle_dt):
 
 
 def get_mpasstat_forecast_file(base_dir, exp_name, init_dt, lead_hour):
-    """Path to an extended-forecast statistics file for one init cycle/lead.
+    """Path to an extended-forecast statistics file for one init cycle and lead.
 
-    Mirrors the directory layout written by scripts/run_verify_model_fcst.ksh in
-    verify_mode=forecast:
+    Matches the layout written by ``scripts/run_verify_model_fcst.ksh``::
+
         <base_dir>/<exp_name>/VerifyModel/<init_cycle>/f<HHH>/mpasstat.<valid_date>.nc
     """
     init_cycle = datetime_to_cycle(init_dt)

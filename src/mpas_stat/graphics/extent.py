@@ -1,17 +1,20 @@
 """Axis extents that follow the data.
 
-Lat-lon maps and latitude axes are gridded over a fixed box (the whole
-globe unless configured otherwise), so a regional application -- or a
-regional sub-domain -- used to be drawn as a small patch in an otherwise
-empty frame. These helpers find the region actually covered by finite
-values (cell edges of the finite cells, unioned over every panel of a
-figure) and apply it.
+Lat-lon maps and latitude axes are gridded over a fixed box (global unless
+configured otherwise), so a regional run would otherwise be drawn as a
+small patch in an empty frame. These helpers find the region covered by
+finite values (cell edges, unioned over every panel of a figure) and apply
+it.
 
-Configured by `map_extent` (model-space graphics config, or
-plot_settings.map_extent in obs space):
-    auto  (default)  zoom to the data
-    full             keep the full grid (previous behaviour)
-    [lat_min, lat_max, lon_min, lon_max]   a fixed box
+Configured by ``map_extent`` (model-space graphics configuration, or
+``plot_settings.map_extent`` in observation space):
+
+``auto`` (default)
+    Zoom to the data.
+``full``
+    Keep the full grid.
+``[lat_min, lat_max, lon_min, lon_max]``
+    A fixed box.
 """
 import numpy as np
 

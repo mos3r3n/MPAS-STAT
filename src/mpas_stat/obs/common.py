@@ -1,20 +1,12 @@
 #!/usr/bin/env python3
-"""
-Shared configuration, metadata, and file-path conventions for observation-
-space verification.
+"""Configuration, metadata and file-path conventions shared by the
+observation-space statistics stage (:mod:`mpas_stat.obs.diag`) and
+graphics stage (:mod:`mpas_stat.obs.plot`).
 
-This module has NO plotting or HDF5-obs-reading code in it -- it is the
-common layer imported by BOTH:
-  - src/mpas_stat/obs/diag.py   (reads IODA obs-space HDF5, computes stats,
-                                  writes obs-space diagnosis netCDF files)
-  - src/mpas_stat/obs/plot.py   (reads those diagnosis netCDF files back and
-                                  draws figures via MPAS-STAT's graphic
-                                  functions)
-
-Keeping the config schema, obs-type metadata (variables/units/labels), bin
-method, netCDF group-naming and file-path conventions in one place is what
-lets the two stages run as fully independent programs while still agreeing
-on where files live and how they are organized.
+It holds the configuration schema, observation-type metadata (variables,
+units, labels), binning, netCDF group names and file paths, so the two
+stages can run as separate programs and still agree on where files live.
+It does no plotting and reads no IODA files.
 """
 import copy
 import glob
@@ -161,19 +153,19 @@ DEFAULT_CONFIG = {
         # (plain mean of per-cycle statistics).
         "time_aggregation": "pooled",
         # Desroziers observation/background-error estimates and the assumed
-        # observation error for "da" experiments with OMA (USER_GUIDE 5.6).
+        # observation error for "da" experiments with OMA (docs/guide/methods.md §5.6).
         "error_diagnostics": True,
         # Ensemble reliability (n_member > 1, OMB): rank histograms and
-        # spread-skill bins (USER_GUIDE 5.7). Members are perturbed with
+        # spread-skill bins (docs/guide/methods.md §5.7). Members are perturbed with
         # the observation error before ranking (Hamill 2001).
         "ensemble_diagnostics": True,
         "rank_histogram_perturb": True,
         # Departures normalized by the assumed observation error (and, for
         # ensembles, by the total spread): RMS / mean per domain and level
-        # and histograms (USER_GUIDE 5.8).
+        # and histograms (docs/guide/methods.md §5.8).
         "normalized_departures": True,
         # Radiances, "da" experiments with OMA: channel x channel
-        # Desroziers covariances (USER_GUIDE 5.9). correlation_channels maps
+        # Desroziers covariances (docs/guide/methods.md §5.9). correlation_channels maps
         # a sensor to a channel list or "all"; default: its configured channels.
         "channel_correlations": True,
         "correlation_channels": {},

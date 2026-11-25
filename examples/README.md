@@ -52,8 +52,10 @@ cycle). `*_graphic_*.yaml` files are for `mpas-stat-graphics` [model_graphics].
 
 ## Where the settings are explained
 
-- All statistics methods and diagnostics: [`docs/USER_GUIDE.md`](../docs/USER_GUIDE.md) §5
-  (5.6 Desroziers, 5.7 ensemble reliability).
-- Obs-space options, scorecard, error tables: USER_GUIDE §2.
-- Radar product: USER_GUIDE §2.6.
+- What the figures look like: [`docs/gallery.md`](../docs/gallery.md).
+
+- All statistics methods and diagnostics: [`docs/guide/methods.md`](../docs/guide/methods.md)
+  (§5.6 Desroziers, §5.7 ensemble reliability).
+- Obs-space options, scorecard, error tables: [`docs/guide/obs_space.md`](../docs/guide/obs_space.md).
+- Radar product: [`docs/guide/radar.md`](../docs/guide/radar.md).
 - Full annotated templates with every option: `configs/`.

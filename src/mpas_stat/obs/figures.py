@@ -1,49 +1,26 @@
-"""Observation-space verification -- GRAPHICS stage.
+"""Observation-space verification: graphics stage.
 
-Reads back the observation-space "diagnosis" netCDF files written by
-mpas_stat.obs.diag (the separate STATISTICS stage) -- one per
-(experiment, cycle, obs type), at
-    <diag_dir>/<experiment>/VerifyOBS/<cycle>/obsstat_<obs>.<date>.nc
--- and draws figures for each obs type by calling MPAS-STAT's own graphic
-functions directly (mpas_stat.graphics.functions.plot_time_series_0d /
-plot_profiles_1d / plot_lat_lon_2d / plot_forecast_lead_0d), exactly as used
-for model-space verification. This mirrors MPAS-STAT's own diag/graphic
-split: this stage plays the role of mpas_stat.graphics.driver +
-mpas_stat.graphics.io's collect_* functions, just pointed at obs-space
-diagnosis files instead of mpasstat.<date>.nc model-space files.
+Reads the diagnosis files written by :mod:`mpas_stat.obs.diag`
+(``<diag_dir>/<exp>/VerifyOBS/<cycle>/obsstat_<obs>.<date>.nc``) and draws
+the figures with the same plotting functions as model space
+(:mod:`mpas_stat.graphics.functions`).
 
-Two products are generated, matching the two statistics-stage modes (see
-mpas_stat.obs.diag's module docstring):
-  - OMB/OMA time series and profiles, for "da"/"hofx" experiments --
-    generate_time_series_graphics / generate_profile_graphics. These use
-    MPAS-STAT's "pseudo-experiment" trick (see _build_pseudo_experiments):
-    one figure per (domain, statistic), OMB solid / OMA dashed, real
-    experiments sharing a colour.
-  - OMB/OMA 2-D products -- lat-lon maps, lev-time (cycle x level)
-    cross-sections, and lev-lat (latitude x level) cross-sections -- for
-    "da"/"hofx" experiments -- generate_lat_lon_graphics /
-    generate_time_level_graphics / generate_lat_vert_graphics. Unlike the
-    0D/1D products above, these use the REAL experiment axis (not OMB/OMA
-    pseudo-experiments), mirroring the model-space package's own
-    plot_lat_lon_2d/plot_time_level_2d/plot_lat_vert_2d convention exactly:
-    experiments.names[0] plotted as the absolute/full-state reference,
-    every other configured experiment plotted as a bootstrap % RMS/STD
-    reduction vs. it. Because OMB and OMA can't both share this same
-    real-experiment axis, each is drawn as its own separate set of figures,
-    under an "omb/" or "oma/" subfolder of the sensor's graphics directory.
-  - OMF "forecast skill" (statistic vs. forecast lead time, bootstrap-
-    aggregated over initialization cycles), for "hofx_forecast" experiments
-    -- generate_forecast_lead_graphics, via plot_forecast_lead_0d -- the
-    exact function the model-space package uses for its own extended-
-    forecast skill plots. OMF also has profile, lat-lon, lev-lat and
-    lev-time counterparts -- see docs/USER_GUIDE.md.
+O−B / O−A time series and profiles
+    :func:`generate_time_series_graphics`,
+    :func:`generate_profile_graphics`. One figure per domain and
+    statistic; O−B solid, O−A dashed, one colour per experiment.
+O−B / O−A maps and cross-sections
+    :func:`generate_lat_lon_graphics`, :func:`generate_time_level_graphics`,
+    :func:`generate_lat_vert_graphics`. The first experiment is drawn as
+    the reference and the others as percent differences from it; O−B and
+    O−A go to separate ``omb/`` and ``oma/`` sub-folders.
+O−F forecast skill
+    :func:`generate_forecast_lead_graphics`: statistic against lead time,
+    pooled over initialization cycles, plus profile, map and
+    cross-section counterparts.
 
-This stage has NO obs-space HDF5 reading code and does not import h5py --
-see mpas_stat.obs.diag for the separate statistics stage that produces the
-diagnosis files this module reads.
-
-Run AFTER mpas_stat.obs.diag has produced the diagnosis files for the obs
-types you want plotted (the same config file works for both stages).
+Run it after the statistics stage; the same configuration file serves
+both. See :doc:`/guide/obs_space`.
 """
 import os
 import traceback

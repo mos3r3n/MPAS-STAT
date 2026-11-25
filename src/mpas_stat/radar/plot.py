@@ -1,32 +1,21 @@
 #!/usr/bin/env python3
-"""
-Radar composite-reflectivity forecast verification -- graphics stage.
+"""Radar composite-reflectivity verification: graphics stage.
 
-Reads back the per-(experiment, init cycle, lead) diagnosis netCDF files
-mpas_stat.radar.diag wrote, aggregates across init cycles for each
-(experiment, lead) pair -- via mpas_stat.radar.common.aggregate_radar_cycles(),
-either bootstrapping each cycle's own derived score or summing raw
-accumulator components first, per config["radar"]["aggregated_score"] -- and
-draws the same three figure families as the standalone
-legacy/radar_reflectivity_verify.py script this product was integrated from:
-  - FSS / TS / ETS / FBIAS vs. forecast lead time, one panel per threshold,
-    one figure per neighborhood radius.
-  - Performance Diagram (POD vs. 1-FAR), one panel per threshold, one
-    figure per radius, points labeled by lead time.
-  - RMSE vs. forecast lead time (one figure).
+Reads the per-experiment, per-cycle, per-lead diagnosis files written by
+:mod:`mpas_stat.radar.diag`, pools them over init cycles with
+:func:`mpas_stat.radar.common.aggregate_radar_cycles` (either
+bootstrapping each cycle's score or summing the raw components first, set
+by ``radar.aggregated_score``) and draws:
 
-Only "hofx_forecast"-typed experiments are plotted here (this product is
-OMF-only) -- experiment selection reuses mpas_stat.obs.plot's own
-_build_forecast_experiments() so the two OMF products (point-wise and
-radar) always agree on which experiments/labels/colors represent "the
-forecast experiments" for a given config.
+- FSS / TS / ETS / FBIAS against forecast lead, one panel per threshold
+  and one figure per neighbourhood radius;
+- performance diagrams (POD against 1 − FAR), points labelled by lead;
+- RMSE against forecast lead.
 
-Parallelism is per-SENSOR (same convention as mpas_stat.obs.plot's
-main()): each worker collects and renders every figure for one radar
-sensor.
+Only ``hofx_forecast`` experiments are plotted, chosen the same way as the
+point-wise O−F product. Work is split across radar sensors.
 
-Usage:
-    python -m mpas_stat.cli.radar_graphics [config.yaml]
+Usage: ``python -m mpas_stat.cli.radar_graphics [config.yaml]``
 """
 import os
 import sys

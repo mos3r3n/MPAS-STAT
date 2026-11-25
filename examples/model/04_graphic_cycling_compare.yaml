@@ -9,7 +9,7 @@
 #
 # Note: model-space scores verify against an analysis, which favours
 # experiments that resemble it at short range. Prefer observation-space
-# results for analysis-time conclusions (USER_GUIDE 5.5).
+# results for analysis-time conclusions (docs/guide/methods.md §5.5).
 # =============================================================================
 
 paths:

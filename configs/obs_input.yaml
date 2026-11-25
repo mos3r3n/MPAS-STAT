@@ -61,7 +61,7 @@ forecast:
   length: forecastLength
   interval: forecastInterval
 
-# How statistics are computed (docs/USER_GUIDE.md section 5).
+# How statistics are computed (docs/guide/methods.md §5).
 statistics:
   method: weighted
   qc_pass_flags: [0, 19]    # 19 = JEDI background check, counted as passed

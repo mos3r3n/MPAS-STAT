@@ -22,26 +22,21 @@ from .style import (
 # Extended-forecast scorecard
 # ---------------------------------------------------------------------------
 def plot_forecast_scorecard(ScoreCard, row_labels, stat_name, cfg):
-    """Extended-forecast scorecard: percent difference vs. the
-    reference/control experiment (exp_names[0]), one panel per other
-    experiment -- styled after a classic triangle scorecard rather than a
-    colour heatmap:
+    """Draw the extended-forecast scorecard.
 
-      - Rows are variable/level combinations from cfg["scorecard"]["rows"]
-        (e.g. "U 200 hPa", ..., "Ps"); columns are forecast lead hours.
-      - Each cell is a single triangle for the percent difference
-        100 * (exp - ref) / ref: pointing up = improvement (negative
-        difference, lower RMS/STD), pointing down = degradation.
-      - Marker size scales with |percent difference|, capped at
-        cfg["scorecard"]["max_score"] (default 20%).
-      - Statistically significant cells (bootstrap CI vs. the reference
-        excludes zero) are drawn solid/bold with a black outline; cells
-        that are not significant are drawn faint with no outline, but use
-        the same size-vs-|% diff| scale -- only the outline (and alpha)
-        distinguishes significant from not-significant.
-      - A row with no valid data at any lead time is shaded grey, matching
-        the blanked-out rows in a typical precipitation-threshold
-        scorecard.
+    One panel per experiment compared with the reference (``exp_names[0]``),
+    drawn as a triangle scorecard:
+
+    - Rows are the variable/level combinations in ``cfg["scorecard"]["rows"]``
+      (e.g. ``"U 200 hPa"``, ``"Ps"``); columns are forecast lead hours.
+    - Each cell is a triangle for the percent difference
+      ``100 * (exp - ref) / ref``: up is an improvement (lower rms/STD),
+      down a degradation.
+    - Marker size scales with the absolute percent difference, capped at
+      ``cfg["scorecard"]["max_score"]`` (default 20).
+    - Significant cells (the bootstrap interval excludes zero) are solid with
+      a black outline; the others are faint with no outline, at the same size.
+    - A row with no valid data at any lead is shaded grey.
     """
     apply_pub_style(cfg)
     out_dir = _section_out_dir(cfg, "forecast_scorecard")

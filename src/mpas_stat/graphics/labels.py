@@ -56,21 +56,27 @@ def plain_units(units):
 
 
 def var_label(name, units=None):
-    """``"T (K)"``; just the name when there are no units."""
+    """Return the panel title for a variable, such as ``T (K)``.
+
+    Just the name when there are no units.
+    """
     u = plain_units(units)
     return f"{name} ({u})" if u else str(name)
 
 
 def cfg_var_label(name, cfg):
-    """var_label with the units from cfg["variable_units"] (if any)."""
+    """Return :func:`var_label` with the units from ``cfg["variable_units"]``."""
     return var_label(name, (cfg or {}).get("variable_units", {}).get(name))
 
 
 def stat_label(stat):
-    """NCAR publication convention: rms, mean, STD, Count, spread, ..."""
+    """Return the axis label for a statistic: rms, mean, STD, Count, spread."""
     return _STATS.get(str(stat).lower().replace(" ", ""), str(stat))
 
 
 def pct_diff_label(stat, ref):
-    """``"rms: % diff. from Control"``."""
+    """Return the percent-difference axis label.
+
+    For example ``rms: % diff. from Control``.
+    """
     return f"{stat_label(stat)}: % diff. from {ref}"

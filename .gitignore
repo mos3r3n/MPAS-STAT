@@ -5,3 +5,5 @@ build/
 dist/
 .venv/
 .DS_Store
+docs/_build/
+docs/api/generated/

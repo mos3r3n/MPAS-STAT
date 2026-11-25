@@ -29,13 +29,16 @@ def generate_cycles(start_date, end_date, interval_hours):
 
 
 def generate_forecast_leads(cfg):
-    """Return forecast lead hours (int) for extended forecast verification.
+    """Return the forecast lead hours (int) to verify.
 
-    Controlled by cfg["forecast"]:
-        length   : maximum forecast lead hour (required)
-        interval : lead-time spacing in hours (required)
-        start    : first lead hour (default = interval; use 0 to include
-                   the initialization/analysis time itself)
+    Read from ``cfg["forecast"]``:
+
+    ``length``
+        Maximum lead hour (required).
+    ``interval``
+        Spacing between leads in hours (required).
+    ``start``
+        First lead hour (default: ``interval``; 0 includes the analysis time).
     """
     fcfg     = cfg.get("forecast", {})
     length   = int(fcfg["length"])
