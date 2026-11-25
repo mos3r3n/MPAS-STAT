@@ -6,6 +6,7 @@ from ..radar.plot import main as _main
 
 
 def main() -> None:
+    """Command ``mpas-stat-radar-plot``: draw radar reflectivity figures."""
     parser = argparse.ArgumentParser(
         description="Draw radar composite-reflectivity figures."
     )

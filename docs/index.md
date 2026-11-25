@@ -12,9 +12,16 @@ product — with one shared graphics engine.
 | Figures | time series, profiles, cross-sections, maps, forecast scorecard | the same plus scorecards, rank histograms, normalized departures, channel correlations |
 
 Both pipelines have two stages: a **statistics stage** writes one netCDF
-diagnosis file per experiment and cycle, and a **graphics stage** reads
-them back and draws the figures. See what it draws in the {doc}`gallery`, start with
-{doc}`installation` and {doc}`quickstart`, or pick a ready-made configuration from {doc}`examples`.
+file per experiment and cycle, and a **graphics stage** reads them back,
+pools the cycles and draws the figures.
+
+**Where to start**
+
+- New here: {doc}`installation`, then {doc}`quickstart`.
+- See what it draws: the {doc}`gallery`.
+- Set up a run: pick a configuration from {doc}`examples`.
+- Read a figure: {doc}`guide/conventions` (§3.2) and {doc}`guide/methods`.
+- Something looks wrong: {doc}`troubleshooting`.
 
 ```{toctree}
 :maxdepth: 2
@@ -44,6 +51,8 @@ guide/methods
 :caption: Reference
 
 configuration
+troubleshooting
+glossary
 api/index
 ```
 

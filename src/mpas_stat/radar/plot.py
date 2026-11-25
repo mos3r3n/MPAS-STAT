@@ -45,6 +45,7 @@ from .common import resolve_radar_settings, aggregate_radar_cycles
 # non-integrated CLI entry point).
 # ============================================================================
 def plot_time_series(ax, times, data, label, x_label, y_label, main_label, linestyle='-', show_error_bars=True):
+    """Draw each experiment's score against lead on ``ax``, with its confidence interval as error bars."""
     linecolors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
 
     for iexp in range(len(label)):
@@ -408,7 +409,7 @@ def main(config_path: Optional[str] = None) -> None:
     for diag_obs in radar_cfg["sensors"]:
         if not radar_diag_sensor_has_files(diag_base_dir, exp_names, diag_obs):
             print(f"WARNING: no radar diagnosis files found for {diag_obs} under {diag_base_dir}; "
-                  f"run src/mpas_stat/radar/diag.py first. Skipping.")
+                  f"run the statistics stage (mpas-stat-radar) first. Skipping.")
             continue
         sensor_graphic_dir = os.path.join(graphics_base_dir, diag_obs)
         os.makedirs(sensor_graphic_dir, exist_ok=True)

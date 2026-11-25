@@ -70,12 +70,17 @@ def apply_pub_style(cfg=None):
 # Small shared utilities
 # ===========================================================================
 def auto_layout(npanels):
+    """Rows and columns of a near-square grid holding ``npanels`` panels."""
     ncols = int(np.ceil(np.sqrt(npanels)))
     nrows = int(np.ceil(npanels / ncols))
     return nrows, ncols
 
 
 def get_exp_plot_settings(cfg):
+    """Experiment names, labels, colours and line styles from ``cfg["experiments"]``.
+
+    Colours default to the configured palette and line styles to solid.
+    """
     exp_names  = cfg["experiments"]["names"]
     exp_labels = cfg["experiments"].get("labels", exp_names)
     colors     = cfg["experiments"].get("colors", None)
@@ -93,6 +98,7 @@ def get_exp_plot_settings(cfg):
 
 
 def is_relative_stat(stat_name, cfg):
+    """Whether ``stat_name`` is drawn as a percent difference from the reference (``relative_reduction_statistics``)."""
     relative_stats = cfg.get(
         "relative_reduction_statistics",
         ["rms", "std", "spread"],
@@ -101,6 +107,7 @@ def is_relative_stat(stat_name, cfg):
 
 
 def significant_from_ci(ci_low, ci_high):
+    """True where a confidence interval excludes zero."""
     return (
         np.isfinite(ci_low) & np.isfinite(ci_high)
         & ((ci_low > 0.0) | (ci_high < 0.0))

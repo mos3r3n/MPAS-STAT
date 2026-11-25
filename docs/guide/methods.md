@@ -1,10 +1,8 @@
 # 5. Statistical methods
 
-Since 2026-11 both pipelines compute and aggregate statistics as described
-below. Every change can be switched off to reproduce older results:
-`statistics_method: legacy` (model statistics), `time_aggregation: mean`
-(model graphics) and `statistics: {method: legacy}` (obs config) together
-reproduce the pre-2026-11 output exactly.
+How the statistics are computed, pooled over cycles and compared, and how
+to read the diagnostics built on them. These are the defaults since
+2026-11; §5.10 lists what changed and how to reproduce older results.
 
 ## 5.1 Model space: weighted, pooled statistics
 
@@ -20,9 +18,7 @@ weighted mean, RMS and STD:
   layer pressure thickness, from the reference (init) pressure.
 - **Squares before square roots.** The 2-D lat-lon RMS of a 3-D variable
   is the RMS over the column, and level-bin products pool every level in
-  the bin. (Before 2026-11 the signed error was averaged over the column or
-  bin first, so errors of opposite sign cancelled and the "RMS" mostly
-  reflected the column-mean bias.)
+  the bin, so errors of opposite sign do not cancel.
 - Per-level products (vertical, height and pressure profiles; lat-hgt,
   lat-pres and their 3-D counterparts) use area weights only.
 - Every product also stores its total `weight`, used for pooling over cycles.
@@ -72,8 +68,7 @@ spread-related is written or drawn for it:
 
 - **QC flags.** `qc_pass_flags` (default `[0, 19]`) applies to every
   innovation source alike. Flag 19 is JEDI's background check, so that
-  check does not shape the verified sample. (Before 2026-11, 19 counted as
-  passed only for HofX-derived innovations.)
+  check does not shape the verified sample.
 - **Common sample.** With `common_sample: true`, for each cycle (or init
   cycle and lead) and variable, every OMB, OMA and OMF vector being compared
   — OMB and OMA of each experiment, and all experiments — keeps only the
@@ -82,9 +77,8 @@ spread-related is written or drawn for it:
   `dateTime`, not by file order. Otherwise an "OMA improves on OMB" or
   "experiment B beats A" result partly reflects which observations each one
   rejected.
-- **GNSS-RO.** Bending angle, like refractivity, uses the HofX group directly
-  as the innovation (before 2026-11 a misspelling sent it through
-  ObsValue − HofX).
+- **GNSS-RO.** Bending angle and refractivity use the HofX group directly
+  as the innovation.
 
 ## 5.5 Interpreting results
 
@@ -333,3 +327,29 @@ These are pooled over cycles, weighted by count.
   covariance.
 - The exported files are not in any UFO-specific format; convert them to what
   your observation-error covariance model reads.
+
+## 5.10 Changes in 2026-11 and older results
+
+The methods above replaced the original ones in 2026-11. Results from
+before then differ in these ways:
+
+| Area | Before 2026-11 | Now |
+|---|---|---|
+| Model-space weights | Every cell and level counted equally | Area and layer-mass weights (§5.1) |
+| Column and level-bin RMS | Signed error averaged over the column or bin first, so errors of opposite sign cancelled and the "RMS" mostly showed the bias | Squares pooled before the square root |
+| Pooling over cycles | Plain mean of per-cycle statistics | Weighted pooling (§5.2) |
+| Ensemble spread | Mean of standard deviations, ddof 0 | √(mean variance), ddof 1 with the (N+1)/N factor (§5.3) |
+| QC flag 19 | Passed only for HofX-derived innovations | Passed for every source (`qc_pass_flags`) |
+| Observation sample | Each O−B, O−A and experiment on its own QC'd sample | One common sample (§5.4) |
+| GNSS-RO bending angle | Computed as ObsValue − HofX by mistake | HofX group used as the innovation |
+| Model `Tv` | Returned potential temperature by mistake | Virtual temperature (`TH` is potential temperature) |
+
+To reproduce older results exactly, set all three:
+
+```yaml
+statistics_method: legacy        # model-space statistics configuration
+time_aggregation: mean           # model-space graphics configuration
+statistics: {method: legacy}     # observation-space configuration
+```
+
+The `Tv` and bending-angle fixes are not reverted by these settings.

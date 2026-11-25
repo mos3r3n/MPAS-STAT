@@ -967,7 +967,7 @@ def main(config_path=None):
         # them have been processed yet for this sensor.
         if not obs_diag_sensor_has_files(diag_base_dir, exp_names, diag_obs):
             print(f"WARNING: no diagnosis files found for {diag_obs} under {diag_base_dir}; "
-                  f"run src/mpas_stat/obs/diag.py first. Skipping.")
+                  f"run the statistics stage (mpas-stat-obs) first. Skipping.")
             continue
         sensor_graphic_dir = os.path.join(graphics_base_dir, diag_obs)
         os.makedirs(sensor_graphic_dir, exist_ok=True)

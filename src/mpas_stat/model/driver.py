@@ -1,3 +1,8 @@
+"""Model-space statistics stage: load the forecast and verifying analysis,
+interpolate to height and pressure, run every statistics task and write
+``mpasstat.<date>.nc``. Entry point: :func:`calculate_statistics`.
+"""
+
 import os
 import sys
 import time

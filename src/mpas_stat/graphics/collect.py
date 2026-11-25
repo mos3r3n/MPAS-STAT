@@ -26,6 +26,11 @@ from .ncread import (
 # Data collectors
 # ---------------------------------------------------------------------------
 def collect_stats_0d(cfg):
+    """Read the region averages of every experiment, variable and statistic, by cycle.
+
+    Returns ``{exp: {cycle: {var: {stat: value}}}}``. Missing files are
+    reported and skipped.
+    """
     base_dir    = cfg["paths"]["base_dir"]
     exp_names   = cfg["experiments"]["names"]
     var_names   = cfg["variables"]
@@ -61,6 +66,12 @@ def collect_stats_0d(cfg):
 
 
 def collect_profiles_1d(cfg, profile_key, stat_name):
+    """Read one profile type (``profile_key``) of every experiment and variable and pool it over cycles.
+
+    Each entry holds the pooled profile and its bootstrap interval, plus the
+    per-cycle samples and pool that the comparison figures use for the
+    paired difference from the reference.
+    """
     base_dir  = cfg["paths"]["base_dir"]
     exp_names = cfg["experiments"]["names"]
     var_names = cfg["variables"]
@@ -120,6 +131,7 @@ def collect_profiles_1d(cfg, profile_key, stat_name):
 
 
 def collect_time_level_2d(cfg, profile_key, stat_name):
+    """Read one profile type of every experiment and variable as a cycle × level array (no pooling)."""
     base_dir  = cfg["paths"]["base_dir"]
     exp_names = cfg["experiments"]["names"]
     var_names = cfg["variables"]
@@ -169,6 +181,7 @@ def collect_time_level_2d(cfg, profile_key, stat_name):
 
 
 def collect_lat_vert_2d(cfg, section_key, stat_name):
+    """Read a latitude–level section (``lat_lev``, ``lat_hgt`` or ``lat_pres``) and pool it over cycles, with bootstrap intervals."""
     base_dir  = cfg["paths"]["base_dir"]
     exp_names = cfg["experiments"]["names"]
     var_names = cfg["variables"]
@@ -228,6 +241,7 @@ def collect_lat_vert_2d(cfg, section_key, stat_name):
 
 
 def collect_lat_lon_2d(cfg, stat_name):
+    """Read the lat-lon maps of every experiment and variable and pool them over cycles, with bootstrap intervals."""
     base_dir  = cfg["paths"]["base_dir"]
     exp_names = cfg["experiments"]["names"]
     var_names = cfg["variables"]

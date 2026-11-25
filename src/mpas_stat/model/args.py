@@ -1,3 +1,5 @@
+"""Command-line arguments of ``mpas-stat-model`` and how they override the YAML configuration."""
+
 import argparse
 from .config import MPASConfig
 

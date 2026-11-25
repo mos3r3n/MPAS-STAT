@@ -511,6 +511,7 @@ def lead_valid_time_allowed(diag_obs: str, init_time: datetime, lead_hour: int) 
     return valid_time.hour in set(int(h) % 24 for h in valid_hours)
 
 def generate_cycles(start_time: datetime, end_time: datetime, interval: timedelta) -> List[datetime]:
+    """Times from ``start_time`` to ``end_time`` (inclusive) every ``interval``."""
     times = []
     t = start_time
     while t <= end_time:
@@ -555,6 +556,7 @@ def resolve_diag_base_dir(config: Dict) -> str:
 # on disk.
 # ============================================================================
 def obs_diag_file(diag_base_dir: str, exp_name: str, diag_obs: str, cycle_time: datetime) -> str:
+    """Path of a cycling statistics file: ``<diag_dir>/<exp>/VerifyOBS/<cycle>/obsstat_<obs>.<date>.nc``."""
     cycle = datetime_to_cycle(cycle_time)
     date_file = datetime_to_datefile(cycle_time)
     return os.path.join(
@@ -574,6 +576,7 @@ def obs_diag_file(diag_base_dir: str, exp_name: str, diag_obs: str, cycle_time: 
 # ============================================================================
 def obs_diag_forecast_file(diag_base_dir: str, exp_name: str, diag_obs: str, init_time: datetime,
                           lead_hour: int) -> str:
+    """Path of an O−F statistics file: ``<diag_dir>/<exp>/VerifyOBS/<init>/f<HHH>/obsstat_<obs>.<valid>.nc``."""
     init_cycle = datetime_to_cycle(init_time)
     valid_time = init_time + timedelta(hours=int(lead_hour))
     date_file = datetime_to_datefile(valid_time)
@@ -621,6 +624,7 @@ def obs_diag_sensor_has_files(diag_base_dir: str, exp_names: List[str], diag_obs
 # ============================================================================
 def radar_composite_diag_file(diag_base_dir: str, exp_name: str, diag_obs: str,
                              init_time: datetime, lead_hour: int) -> str:
+    """Path of a radar statistics file: ``<diag_dir>/<exp>/VerifyOBS/<init>/f<HHH>/radarstat_<obs>.<valid>.nc``."""
     init_cycle = datetime_to_cycle(init_time)
     valid_time = init_time + timedelta(hours=int(lead_hour))
     date_file = datetime_to_datefile(valid_time)

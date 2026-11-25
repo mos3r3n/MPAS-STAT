@@ -1,3 +1,9 @@
+"""Vertical interpolation from model levels to height and pressure levels.
+
+Interpolation coefficients are computed once per file and applied to
+every variable; numba is used when installed.
+"""
+
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 
@@ -331,6 +337,7 @@ if HAS_NUMBA:
         return out
 else:
     def apply_interp_coefficients_by_level_numba(field, k0, k1, w, valid_target):
+        """Apply interpolation coefficients to ``field`` (numba, parallel over target levels and points)."""
         raise ImportError("numba is not installed")
 
 

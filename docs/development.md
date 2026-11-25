@@ -33,8 +33,8 @@ sphinx-build -W -b html docs docs/_build/html
 ```
 
 Pages are Markdown (MyST). The API reference is generated from docstrings
-(NumPy or Google style, via napoleon), so new public functions should have
-one. The configuration and example pages include the YAML files directly,
+(NumPy or Google style, via napoleon); `tests/test_docs.py` fails if a
+module or public function has none. The configuration and example pages include the YAML files directly,
 so they never go stale.
 
 ## Code layout

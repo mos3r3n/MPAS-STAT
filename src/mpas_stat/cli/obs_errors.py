@@ -6,6 +6,7 @@ from ..obs.error_export import main as _main
 
 
 def main() -> None:
+    """Command ``mpas-stat-obs-errors``: write the Desroziers observation-error tables only (§5.6)."""
     parser = argparse.ArgumentParser(
         description="Write Desroziers observation-error estimates (CSV + YAML with a "
                     "UFO 'assign error' filter) from obs-space statistics files. "

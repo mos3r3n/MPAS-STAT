@@ -13,6 +13,7 @@ from ..core.timeutils import datetime_to_cycle, datetime_to_datefile
 # NetCDF helpers
 # ---------------------------------------------------------------------------
 def read_nc_path(ds, path):
+    """Read the variable at a group path such as ``"U/0D/Global/rms"`` as a float64 array."""
     obj = ds
     for p in path.strip("/").split("/"):
         obj = obj[p]
@@ -31,6 +32,7 @@ def _maybe_print_missing(cfg, message):
 
 
 def get_mpasstat_file(base_dir, exp_name, cycle_dt):
+    """Path of a cycling statistics file: ``<base_dir>/<exp>/VerifyModel/<cycle>/mpasstat.<date>.nc``."""
     cycle     = datetime_to_cycle(cycle_dt)
     date_file = datetime_to_datefile(cycle_dt)
     return os.path.join(
@@ -91,6 +93,7 @@ def get_profile_coord(ds, profile_key):
 
 
 def get_lat_vert_coord(ds, section_key):
+    """Coordinates of a latitude–level section: ``(lat, vertical, vertical label, invert_y)``."""
     lat = np.asarray(ds["LatBins"][:])
     _map = {
         "lat_lev":  (ds["LevelBins"][:],    "Model level bin",  False),

@@ -37,6 +37,13 @@ _ALIASES = {
 
 
 def stat_kind(stat_name):
+    """How a statistic is pooled over cycles: ``"mean"``, ``"rms"``, ``"std"`` or ``"plain"``.
+
+    Mean-like statistics (mean, bias) pool linearly, RMS-like ones (rms,
+    spread, Desroziers errors, normalized-departure RMS) as the root of the
+    pooled mean square, STD from the pooled first and second moments, and
+    anything else (e.g. Count) as a plain mean.
+    """
     s = str(stat_name).lower()
     if s in ("mean", "bias"):
         return "mean"
@@ -110,6 +117,7 @@ def read_components(group, stat_name):
 
 
 def missing_components(shape=()):
+    """Pool components ``(value, w, m1, m2)`` for a missing sample: NaN value and moments, zero weight."""
     nan = np.full(shape, np.nan)
     return nan, np.zeros(shape), nan, nan
 
