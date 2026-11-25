@@ -62,6 +62,12 @@ No rank histograms, spread–skill or spread figures
 : These need an ensemble (`n_member > 1`). For a deterministic run they
   are not written or drawn by design (§5.3).
 
+No `continuous/` figures, CSV or `.stat` files
+: They need `statistics.met_statistics` (and `met_stat_files` for the
+  `.stat` files) with `method: weighted`, and statistics files written
+  with them on: re-run the statistics stage after turning them on. GNSS-RO
+  has no partial sums.
+
 Radiosondes appear only every 12 hours
 : Radiosondes report at 00 and 12 UTC (`cycle_valid_hours`). In O−F, leads
   that are not valid at those hours are empty (§2.7).

@@ -73,3 +73,5 @@ statistics:
   normalized_departures: true # departures / assumed obs error (and / total spread)
   channel_correlations: true  # radiances: channel x channel Desroziers covariances
   # correlation_channels: {amsua_n19: all}   # default: the sensor's configured channels
+  met_statistics: true      # MET SL1L2 partial sums (+ ECNT CRPS for ensembles), §5.11
+  met_stat_files: true      # also write MET .stat files (SL1L2, ECNT, RHIST) for stat_analysis / METviewer

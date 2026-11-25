@@ -117,6 +117,7 @@ n_workers: 4                   # sensors drawn in parallel
 | `generate_normalized_departures` | §5.8 |
 | `generate_ensemble_diagnostics`, `spread_skill` | §5.7 |
 | `generate_channel_correlations` | §5.9 |
+| `generate_continuous_statistics`, `write_continuous_tables` | MET-style continuous statistics, Taylor diagrams and CSV (§5.11) |
 | `scorecard` | One-page summary (§2.4), or `false` |
 | `ci_style` | Confidence intervals: `shade`, `errorbar` or `none` |
 | `figure_format`, `max_time_ticks`, `palette` | Output format, date ticks, line colours |
@@ -141,6 +142,8 @@ statistics:
   normalized_departures: true   # §5.8
   channel_correlations: true    # §5.9
   correlation_channels: {}      # e.g. {amsua_n19: all, iasi_metop-b: [16, 38, 49]}
+  met_statistics: true          # MET partial sums and CRPS (§5.11)
+  met_stat_files: true          # MET .stat files for stat_analysis / METviewer
 ```
 
 ### Sensors
@@ -266,6 +269,7 @@ Drawn for `da` experiments with O−A (error diagnostics) and for ensembles
 | `rank_histogram/`, `spread_skill/` | Ensemble reliability | §5.7 |
 | `normalized_departure/` | Departures divided by σo and by total spread | §5.8 |
 | `channel_correlation/` | Inter-channel error correlations (radiances) | §5.9 |
+| `continuous/` | MET continuous statistics: MAE, correlation, stdev ratio, CRPS; Taylor diagrams; CSV | §5.11 |
 
 ### Forecasts (O−F)
 
@@ -312,9 +316,12 @@ omb/ | oma/ | omf/             O−B and O−A (cycling files) or O−F (forecas
 channel_covariance/            radiance channel covariances (§5.9)
 ```
 
+With `met_stat_files`, a MET-format `obsstat_<obs>.<date>.stat` sits next
+to each file (§5.11).
+
 `Spread` and `TotalSpread` are written only for ensembles. The error,
-reliability and normalized-departure variables of §5.6–5.8 are added to
-the same groups.
+reliability and normalized-departure variables of §5.6–5.8 and the MET
+partial sums of §5.11 (`SL1L2_*`, `ECNT_*`) are added to the same groups.
 
 ## 2.6 Radar reflectivity
 

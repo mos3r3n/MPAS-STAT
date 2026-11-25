@@ -434,10 +434,9 @@ class TestColourScales(unittest.TestCase):
         self.assertEqual(_palette({}), CVD_SAFE_PALETTE)
 
 
-class TestErrorConsistencyDiagnostics(unittest.TestCase):
-    """Desroziers estimates recover KNOWN observation/background errors for an
-    optimal analysis, also when OMA comes from a separate, reordered file,
-    and the ensemble consistency ratio is ~1 for a consistent ensemble."""
+class _KnownErrorCase:
+    """Synthetic IODA case with KNOWN errors: y ~ N(0, so^2), background
+    xb ~ N(0, sb^2), optimal analysis; ``_run`` writes and processes it."""
 
     SO, SB, N = 2.0, 1.5, 6000
 
@@ -492,6 +491,11 @@ class TestErrorConsistencyDiagnostics(unittest.TestCase):
         write_obs_diag_files(process_experiment(config, "aircraft"), config, "aircraft", f"{tmp}/diag")
         self.config, self.diag_dir = config, f"{tmp}/diag"
         return nc4.Dataset(f"{tmp}/diag/exp/VerifyOBS/2024091306/obsstat_aircraft.2024-09-13_06.00.00.nc")
+
+class TestErrorConsistencyDiagnostics(_KnownErrorCase, unittest.TestCase):
+    """Desroziers estimates recover KNOWN observation/background errors for an
+    optimal analysis, also when OMA comes from a separate, reordered file,
+    and the ensemble consistency ratio is ~1 for a consistent ensemble."""
 
     def test_deterministic_recovers_known_errors(self):
         with self._run(1) as ds:
@@ -1110,3 +1114,102 @@ class TestMapFigureSize(unittest.TestCase):
 
     def test_without_cartopy_keeps_fixed_size(self):
         self.assertEqual(self.size(2, 3, (-90, 90), (-180, 180), None), (15.0, 7.0))
+
+
+class TestMetStatistics(_KnownErrorCase, unittest.TestCase):
+    """MET partial sums, continuous statistics, ECNT and .stat output on the
+    known-error case above: y ~ N(0, so^2) and background xb ~ N(0, sb^2)
+    independent, optimal analysis xa = xb + k (y - xb), k = sb^2/(sb^2+so^2)."""
+
+    def _cnt(self, diagtype, lead=None):
+        from mpas_stat.obs.common import generate_cycles, resolve_time_settings
+        from mpas_stat.obs.continuous import collect_continuous
+        start, end, step = resolve_time_settings(self.config, "aircraft")
+        return collect_continuous(self.diag_dir, "exp", "aircraft",
+                                  generate_cycles(start, end, step), diagtype, "global",
+                                  "vert_pres_profile_global")["T"]
+
+    def test_partial_sums_match_innovation_statistics(self):
+        with self._run(1) as ds:
+            g = ds["omb/airTemperature/0D/global"]
+            self.assertEqual(g["SL1L2_FBAR"].dtype, np.float64)
+            fb, ob = float(g["SL1L2_FBAR"][...]), float(g["SL1L2_OBAR"][...])
+            mse = (float(g["SL1L2_FFBAR"][...]) - 2 * float(g["SL1L2_FOBAR"][...])
+                   + float(g["SL1L2_OOBAR"][...]))
+            self.assertAlmostEqual(fb - ob, -float(g["Bias"][...]), places=5)   # MET sign
+            self.assertAlmostEqual(np.sqrt(mse), float(g["RMS"][...]), places=4)
+            self.assertEqual(float(g["SL1L2_TOTAL"][...]), float(g["Count"][...]))
+            self.assertNotIn("ECNT_CRPS_EMP", g.variables)                     # deterministic
+
+    def test_continuous_statistics_known_values(self):
+        so, sb = self.SO, self.SB
+        self._run(1).close()
+        omb = self._cnt("omb")["all"]
+        self.assertAlmostEqual(float(omb["RMSE"]), np.hypot(so, sb), delta=0.06)
+        self.assertAlmostEqual(float(omb["FSTDEV"]), sb, delta=0.05)
+        self.assertAlmostEqual(float(omb["OSTDEV"]), so, delta=0.05)
+        self.assertAlmostEqual(float(omb["PR_CORR"]), 0.0, delta=0.04)
+        self.assertAlmostEqual(float(omb["MAE"]), np.hypot(so, sb) * np.sqrt(2 / np.pi), delta=0.06)
+        k = sb**2 / (sb**2 + so**2)
+        sa = np.sqrt((1 - k)**2 * sb**2 + k**2 * so**2)
+        oma = self._cnt("oma")["all"]
+        self.assertAlmostEqual(float(oma["PR_CORR"]), k * so / sa, delta=0.03)
+        levels = self._cnt("omb")["levels"]
+        self.assertEqual(float(np.nansum(levels["TOTAL"])), float(omb["TOTAL"]))
+
+    def test_ensemble_crps_and_spread(self):
+        with self._run(10) as ds:
+            g = ds["omb/windEastward/0D/global"]
+            crps, fair = float(g["ECNT_CRPS_EMP"][...]), float(g["ECNT_CRPS_EMP_FAIR"][...])
+            self.assertLess(fair, crps)
+            self.assertAlmostEqual(float(g["ECNT_SPREAD"][...]), self.SB, delta=0.08)
+            self.assertNotIn("ECNT_CRPS_EMP", ds["oma/windEastward/0D/global"].variables)
+
+    def test_met_stat_file_columns(self):
+        from mpas_stat.obs.metstat import ECNT_COLUMNS, HEADER, SL1L2_COLUMNS
+        self._run(10).close()
+        path = f"{self.diag_dir}/exp/VerifyOBS/2024091306/obsstat_aircraft.2024-09-13_06.00.00.stat"
+        lines = [ln.split() for ln in open(path)]
+        self.assertEqual(lines[0], HEADER)
+        types = {}
+        for cols in lines[1:]:
+            lt = cols[len(HEADER) - 1]
+            types.setdefault(lt, set()).add(len(cols))
+            self.assertEqual(cols[0], "V12.0.0")
+            self.assertEqual(cols[3], "060000" if cols[2] == "OMB" else "000000")
+        self.assertEqual(types["SL1L2"], {len(HEADER) + len(SL1L2_COLUMNS)})
+        self.assertEqual(types["ECNT"], {len(HEADER) + len(ECNT_COLUMNS)})
+        self.assertEqual(types["RHIST"], {len(HEADER) + 2 + 11})
+        sl = next(c for c in lines[1:] if c[23] == "SL1L2" and c[2] == "OMB"
+                  and c[9] == "airTemperature" and c[11] == "ALL")
+        self.assertEqual(sl[10], "K")
+        with nc4.Dataset(path[:-5] + ".nc") as ds:
+            self.assertEqual(int(sl[24]), int(ds["omb/airTemperature/0D/global/SL1L2_TOTAL"][...]))
+
+    def test_legacy_writes_no_met_statistics(self):
+        with self._run(1, method="legacy") as ds:
+            self.assertNotIn("SL1L2_TOTAL", ds["omb/airTemperature/0D/global"].variables)
+        self.assertFalse(os.path.exists(
+            f"{self.diag_dir}/exp/VerifyOBS/2024091306/obsstat_aircraft.2024-09-13_06.00.00.stat"))
+
+    def test_csv_table_and_figures(self):
+        import csv
+        from mpas_stat.obs.continuous import export_continuous_tables
+        from mpas_stat.obs.figures import generate_continuous_graphics
+        self._run(10).close()
+        out = os.path.join(os.path.dirname(self.diag_dir), "cnt")
+        files = export_continuous_tables(self.config, "aircraft", self.diag_dir, out)
+        rows = list(csv.DictReader(open(files[0])))
+        self.assertTrue(any(r["diagtype"] == "oma" for r in rows))
+        r = next(r for r in rows if r["diagtype"] == "omb" and r["level"] == "all"
+                 and r["variable"] == "U")
+        self.assertNotEqual(r["CRPS_EMP_FAIR"], "")
+        jobs = generate_continuous_graphics(self.config, "aircraft",
+                                            self.config["paths"]["graphic_dir"], self.diag_dir)
+        self.assertEqual(len(jobs), 4)            # profiles + Taylor, OMB and OMA
+        for func, args, kwargs in jobs:
+            func(*args, **kwargs)
+        names = sorted(os.listdir(os.path.join(self.config["paths"]["graphic_dir"], "continuous")))
+        self.assertIn("taylor_omb_global.png", names)
+        self.assertIn("cnt_profile_oma_global.png", names)
+

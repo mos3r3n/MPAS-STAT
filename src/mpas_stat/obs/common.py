@@ -169,6 +169,14 @@ DEFAULT_CONFIG = {
         # a sensor to a channel list or "all"; default: its configured channels.
         "channel_correlations": True,
         "correlation_channels": {},
+        # MET-style partial sums (SL1L2: forecast F = H(x), observation O)
+        # and, for ensembles, ECNT CRPS, so the graphics stage can derive
+        # MET's continuous statistics (ME, MAE, RMSE, ESTDEV, MBIAS,
+        # PR_CORR, ...) after pooling (docs/guide/methods.md §5.11).
+        "met_statistics": True,
+        # Also write MET-format .stat files (SL1L2, ECNT, RHIST lines) next
+        # to each statistics file, for stat_analysis and METviewer.
+        "met_stat_files": True,
     },
 }
 
@@ -183,6 +191,8 @@ _LEGACY_STATISTICS = {
     "error_diagnostics": False,
     "ensemble_diagnostics": False,
     "rank_histogram_perturb": False,
+    "met_statistics": False,
+    "met_stat_files": False,
     "normalized_departures": False,
     "channel_correlations": False,
 }
@@ -334,6 +344,33 @@ NORM_DEP_KEYS = [
     ("NormDepTotalCount", "ndt_count"),
 ]
 NORM_DEP_EDGES = np.arange(-8.0, 8.0 + 1.0e-9, 0.25)
+
+# MET partial sums (statistics.met_statistics), every diagtype, as in MET's
+# SL1L2 line type: with F = H(x) = O - departure and O = ObsValue over the
+# TOTAL valid pairs, FBAR = mean(F), OBAR = mean(O), FOBAR = mean(F*O),
+# FFBAR = mean(F^2), OOBAR = mean(O^2), MAE = mean(|F - O|). They pool over
+# cycles weighted by TOTAL, and every MET continuous statistic follows from
+# the pooled sums (mpas_stat.obs.continuous).
+MET_SL1L2_KEYS = [
+    ("SL1L2_TOTAL", "sl_total"),
+    ("SL1L2_FBAR", "sl_fbar"),
+    ("SL1L2_OBAR", "sl_obar"),
+    ("SL1L2_FOBAR", "sl_fobar"),
+    ("SL1L2_FFBAR", "sl_ffbar"),
+    ("SL1L2_OOBAR", "sl_oobar"),
+    ("SL1L2_MAE", "sl_mae"),
+]
+# Ensembles (n_member > 1), as in MET's ECNT line type: empirical CRPS and
+# the "fair" CRPS (unbiased for the ensemble size), SPREAD = sqrt(mean
+# member variance, ddof 1, unperturbed) and SPREAD_PLUS_OERR =
+# sqrt(mean(variance + sigma_o^2)), over ECNT_TOTAL observations.
+MET_ECNT_KEYS = [
+    ("ECNT_TOTAL", "ec_total"),
+    ("ECNT_CRPS_EMP", "ec_crps"),
+    ("ECNT_CRPS_EMP_FAIR", "ec_crps_fair"),
+    ("ECNT_SPREAD", "ec_spread"),
+    ("ECNT_SPREAD_PLUS_OERR", "ec_spread_oerr"),
+]
 
 ERROR_DIAG_KEYS = [
     ("ObsErrorDesroziers", "obserr_desroziers"),

@@ -11,6 +11,8 @@ import numpy as np
 from .channel_cov import CHANNEL_COV_KEYS
 from .common import (
     ERROR_DIAG_KEYS,
+    MET_ECNT_KEYS,
+    MET_SL1L2_KEYS,
     NORM_DEP_EDGES,
     NORM_DEP_KEYS,
     SPREAD_BIN_EDGES,
@@ -21,7 +23,9 @@ from .common import (
     obs_diag_file,
     obs_diag_forecast_file,
     profile_key_for_domain,
+    resolve_statistics_settings,
 )
+from .metstat import cycling_leads, forecast_valid_time, stat_lines, write_stat_file
 from .sensor_config import get_bin_method
 
 # ============================================================================
@@ -32,7 +36,12 @@ from .sensor_config import get_bin_method
 
 # Statistics that only exist for an ensemble (n_member > 1): never written
 # for a deterministic experiment, so no empty spread figures follow.
-_ENSEMBLE_ONLY = ("spread", "totSpread", "ndt_rms", "ndt_mean", "ndt_count")
+_ENSEMBLE_ONLY = ("spread", "totSpread", "ndt_rms", "ndt_mean", "ndt_count") + tuple(
+    prefix for _, prefix in MET_ECNT_KEYS)
+# Statistics stored in double precision: MET partial sums such as OOBAR are
+# large and their differences (variances, covariances) small.
+_DOUBLE = tuple(prefix for _, prefix in MET_SL1L2_KEYS + MET_ECNT_KEYS)
+_KEYS_0D_1D = STAT_KEYS + ERROR_DIAG_KEYS + NORM_DEP_KEYS + MET_SL1L2_KEYS + MET_ECNT_KEYS
 
 
 def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes,
@@ -121,13 +130,14 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
                 d0 = var_grp.createGroup("0D")
                 for idom, domain in enumerate(domains):
                     region_grp = d0.createGroup(domain)
-                    for stat_disp, prefix in STAT_KEYS + ERROR_DIAG_KEYS + NORM_DEP_KEYS:
+                    for stat_disp, prefix in _KEYS_0D_1D:
                         key = f"{prefix}_{diagtype}"
                         if key not in results or (n_member <= 1 and prefix in _ENSEMBLE_ONLY):
                             continue
                         val = results[key][(iexp, idom) + time_idx + (iv,)]
-                        var_out = region_grp.createVariable(stat_disp, "f4", ())
-                        var_out[:] = np.float32(val)
+                        dtype = "f8" if prefix in _DOUBLE else "f4"
+                        var_out = region_grp.createVariable(stat_disp, dtype, ())
+                        var_out[:] = val
                     for name, key in (("NormDepHist", "ndhist"), ("NormDepTotalHist", "ndthist")):
                         k = f"{key}_{diagtype}"
                         if norm_dep and k in results and (
@@ -146,13 +156,14 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
                 d1 = var_grp.createGroup("1D")
                 for pkey, idom in profile_entries:
                     prof_grp = d1.createGroup(pkey)
-                    for stat_disp, prefix in STAT_KEYS + ERROR_DIAG_KEYS + NORM_DEP_KEYS:
+                    for stat_disp, prefix in _KEYS_0D_1D:
                         key = f"{prefix}_{diagtype}_bin"
                         if key not in results or (n_member <= 1 and prefix in _ENSEMBLE_ONLY):
                             continue
                         arr = results[key][(iexp, idom) + time_idx + (slice(None), iv)]
-                        var_out = prof_grp.createVariable(stat_disp, "f4", ("nLevels",))
-                        var_out[:] = arr.astype(np.float32)
+                        dtype = "f8" if prefix in _DOUBLE else "f4"
+                        var_out = prof_grp.createVariable(stat_disp, dtype, ("nLevels",))
+                        var_out[:] = arr
                     if ens_diag and diagtype == "omb":
                         hist = prof_grp.createVariable("RankHistogram", "f8", ("nLevels", "nRank"))
                         hist[:] = results["rank_omb_bin"][(iexp, idom) + time_idx
@@ -206,6 +217,10 @@ def _write_diag_dataset(out_file: str, results: Dict, bin_method: int, diagtypes
                         v[:] = results[f"{prefix}_omb"][(iexp, idom) + time_idx]
 
 
+def _n_member(results: Dict, iexp: int) -> int:
+    return int((results.get("n_member") or [1] * (iexp + 1))[iexp])
+
+
 def _experiments_to_write(config: Dict):
     """Experiments whose diagnosis files are written: experiments.write if
     given, else all. The other configured experiments are still read, so
@@ -236,6 +251,7 @@ def write_obs_diag_files(results: Dict, config: Dict, diag_obs: str, diag_base_d
     plot_oma = config["plot_settings"].get("plot_oma", True)
 
     write = _experiments_to_write(config)
+    met_files = bool(resolve_statistics_settings(config).get("met_stat_files"))
 
     for iexp, exp_name in enumerate(exp_names):
         if exp_types[iexp] == "hofx_forecast":
@@ -253,6 +269,13 @@ def write_obs_diag_files(results: Dict, config: Dict, diag_obs: str, diag_base_d
             os.makedirs(os.path.dirname(out_file), exist_ok=True)
             _write_diag_dataset(out_file, results, bin_method, diagtypes, iexp, (it,))
             print(f"Wrote obs diagnosis file: {out_file}")
+            if met_files:
+                stat = write_stat_file(
+                    out_file[:-3] + ".stat",
+                    stat_lines(results, diag_obs, bin_method, exp_name, iexp, (it,), diagtypes,
+                               cycle_time, cycling_leads(config), _n_member(results, iexp)))
+                if stat:
+                    print(f"Wrote MET stat file: {stat}")
 
 
 def write_obs_forecast_diag_files(results: Dict, config: Dict, diag_obs: str, diag_base_dir: str) -> None:
@@ -268,6 +291,7 @@ def write_obs_forecast_diag_files(results: Dict, config: Dict, diag_obs: str, di
     exp_types = config["experiments"].get("types", [])
 
     write = _experiments_to_write(config)
+    met_files = bool(resolve_statistics_settings(config).get("met_stat_files"))
 
     for iexp, exp_name in enumerate(exp_names):
         if exp_types[iexp] != "hofx_forecast":
@@ -281,3 +305,11 @@ def write_obs_forecast_diag_files(results: Dict, config: Dict, diag_obs: str, di
                 os.makedirs(os.path.dirname(out_file), exist_ok=True)
                 _write_diag_dataset(out_file, results, bin_method, ["omf"], iexp, (it, il))
                 print(f"Wrote obs forecast diagnosis file: {out_file}")
+                if met_files:
+                    stat = write_stat_file(
+                        out_file[:-3] + ".stat",
+                        stat_lines(results, diag_obs, bin_method, exp_name, iexp, (it, il),
+                                   ["omf"], forecast_valid_time(init_time, lead),
+                                   {"omf": float(lead)}, _n_member(results, iexp)))
+                    if stat:
+                        print(f"Wrote MET stat file: {stat}")
