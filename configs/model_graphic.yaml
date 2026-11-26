@@ -143,10 +143,10 @@ forecast:
 scorecard:
   profile_key: vert_pres_profile
   rows:
-    - {variable: U,  levels: [200, 500, 700, 850, 725]}
-    - {variable: V,  levels: [200, 500, 700, 850, 725]}
-    - {variable: T,  levels: [200, 500, 700, 850, 725]}
-    - {variable: Qv, levels: [200, 500, 700, 850, 725]}
+    - {variable: U,  levels: [200, 500, 700, 850, 925]}
+    - {variable: V,  levels: [200, 500, 700, 850, 925]}
+    - {variable: T,  levels: [200, 500, 700, 850, 925]}
+    - {variable: Qv, levels: [200, 500, 700, 850, 925]}
     - {variable: Ps}
   # Triangle styling: up = improvement, down = degradation; solid + black
   # outline = statistically significant (bootstrap CI vs. the reference
